@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Secrets
+.env
+!.env.example
+
+# Generated database
+*.db
+ecommerce.tmp
+
+# macOS
+.DS_Store
