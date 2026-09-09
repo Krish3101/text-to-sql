@@ -169,7 +169,7 @@ class OpenRouterProvider(BaseLLMProvider):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/text-to-sql-jury1",
+            "HTTP-Referer": "https://github.com/Krish3101/text-to-sql",
             "X-Title": "Text-to-SQL Jury 1 Demo",
             "User-Agent": "TextToSQL-Jury/1.0"
         }
