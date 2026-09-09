@@ -1,6 +1,5 @@
 # ⚡ Text-to-SQL Generator (CRUD & Guardrails)
 
-> **7th Semester Generative AI Capstone Project — Jury 1 Evaluation Milestone**  
 > *Author: Krish Kalya ([krishkalya31012005@gmail.com](mailto:krishkalya31012005@gmail.com))*
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)
@@ -123,7 +122,7 @@ Open your browser and navigate to: **http://localhost:8501**
 
 ---
 
-## 💡 Example Benchmark Queries (Jury Demo)
+## 💡 Example Benchmark Queries
 
 The web UI includes **Quick Demo Chips** for one-click testing:
 
@@ -169,9 +168,9 @@ All **21 tests** pass covering:
 
 ---
 
-## 🎯 Version 1.0 Scope vs Jury 2 Roadmap
+## 🎯 Version 1.0 Scope vs Roadmap
 
-| Feature Area | Version 1.0 (Jury 1 Evaluation) | Version 2.0 Roadmap (Jury 2) |
+| Feature Area | Version 1.0 | Version 2.0 Roadmap |
 | :--- | :--- | :--- |
 | **LLM Backend** | OpenRouter Cloud LLM (`llama-3.1-70b-instruct`) | Multi-Provider + Local Ollama support |
 | **Query Memory** | Single-turn prompt grounding | Multi-turn conversational context & follow-ups |

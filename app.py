@@ -1,5 +1,5 @@
 """
-Text-to-SQL Generator (Version 1.0 - 7th Sem GenAI Jury 1 Evaluation)
+Text-to-SQL Generator (Version 1.0)
 Author: Krish Kalya <krishkalya31012005@gmail.com>
 """
 
@@ -28,7 +28,7 @@ from src.ui import (
 # ==============================================================================
 
 st.set_page_config(
-    page_title="Text-to-SQL Generator | 7th Sem GenAI Capstone",
+    page_title="Text-to-SQL Generator",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -94,7 +94,7 @@ if "db_stats" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## ⚡ System Configuration")
-    st.caption("Version 1.0 (Jury 1 Evaluation)")
+    st.caption("Version 1.0")
 
     st.markdown("### 🤖 Cloud LLM Backend")
 
@@ -195,7 +195,6 @@ engine = st.session_state["sql_engine"]
 # Main Page Header & Multi-Tab Layout
 # ==============================================================================
 
-st.markdown('<div class="badge">🎓 7th Sem GenAI Capstone — Jury 1 Project</div>', unsafe_allow_html=True)
 st.markdown("# ⚡ Text-to-SQL Generator (CRUD & Guardrails)")
 st.markdown(
     "Translate natural language queries into safe, dialect-precise SQLite statements with "

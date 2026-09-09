@@ -170,8 +170,8 @@ class OpenRouterProvider(BaseLLMProvider):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/Krish3101/text-to-sql",
-            "X-Title": "Text-to-SQL Jury 1 Demo",
-            "User-Agent": "TextToSQL-Jury/1.0"
+            "X-Title": "Text-to-SQL Generator",
+            "User-Agent": "TextToSQL/1.0"
         }
 
         req = urllib.request.Request(self.ENDPOINT, data=req_data, headers=headers, method="POST")

@@ -23,7 +23,7 @@ def render_live_query_tab(engine: TextToSQLEngine, db_path: str) -> None:
     st.markdown("### 💬 Ask your database a question")
     st.caption("Ask in plain English. Read queries execute immediately in read-only isolation; write operations require your approval.")
 
-    # Quick demo query buttons for quick presentation during jury evaluation
+    # Quick demo query buttons for one-click testing
     st.markdown("##### 💡 Quick Demo Queries (Click to load)")
     q_col1, q_col2, q_col3, q_col4 = st.columns(4)
     with q_col1:
@@ -169,7 +169,6 @@ def render_schema_explorer_tab(db_path: str) -> None:
 def render_architecture_tab() -> None:
     """Renders 3-layer architecture and defense-in-depth security overview."""
     st.markdown("### 🏛️ System Architecture & Defense-in-Depth Guardrails")
-    st.caption("Version 1.0 Milestone for 7th Semester Generative AI Capstone Jury Evaluation.")
 
     col1, col2, col3 = st.columns(3)
     with col1:
