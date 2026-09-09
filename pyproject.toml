@@ -1,0 +1,39 @@
+[project]
+name = "text-to-sql"
+version = "1.0.0"
+description = "Text-to-SQL Generator with 3-Layer Security Guardrails for 7th Sem GenAI Capstone"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Krish Kalya", email = "krishkalya31012005@gmail.com" }
+]
+dependencies = [
+    "sqlglot>=25.0.0",
+    "sqlalchemy>=2.0.0",
+    "sqlparse>=0.5.0",
+    "pandas>=2.2.0",
+    "streamlit>=1.35.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.16.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
