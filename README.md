@@ -6,7 +6,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-FF4B4B?logo=streamlit)
 ![SQLGlot](https://img.shields.io/badge/SQLGlot-AST--Engine-00ADD8)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
-![Pytest](https://img.shields.io/badge/Tests-21%20Passed-brightgreen?logo=pytest)
+![Pytest](https://img.shields.io/badge/Tests-27%20Passed-brightgreen?logo=pytest)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
@@ -160,11 +160,12 @@ pytest tests/ -v
 ruff check .
 ```
 
-All **21 tests** pass covering:
+All **27 tests** pass covering:
 - Database seeding, schema creation, stats introspection, foreign keys, and reset.
 - AST parsing, stacked query rejection, read vs write classification, disallowed command blocking.
+- Set operations (UNION / EXCEPT / INTERSECT) classified as reads rather than writes.
 - SQL code fence extraction, cleaning, and normalization.
-- Safe read-only execution and write approval gating.
+- Safe read-only execution and write approval gating, including re-validation on the write path.
 
 ---
 

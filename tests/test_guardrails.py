@@ -79,3 +79,21 @@ def test_disallowed_pragma_rejected():
     is_safe, needs_approval, err = validate_sql_security(sql)
     assert is_safe is False
     assert "disallowed" in err.lower() or "pragma" in err.lower()
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT id FROM products UNION SELECT id FROM orders",
+        "SELECT id FROM products UNION ALL SELECT id FROM orders",
+        "SELECT id FROM products EXCEPT SELECT id FROM orders",
+        "SELECT id FROM products INTERSECT SELECT id FROM orders",
+        "VALUES (1), (2)",
+    ],
+)
+def test_set_operations_are_read_only(sql):
+    """Set operations only read, so they must not be sent down the approval path."""
+    is_safe, needs_approval, err = validate_sql_security(sql)
+    assert is_safe is True
+    assert needs_approval is False
+    assert err is None

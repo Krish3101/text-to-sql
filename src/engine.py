@@ -396,6 +396,25 @@ class TextToSQLEngine:
         start_time = time.perf_counter()
         cleaned_sql = SQLExtractor.clean_sql(sql)
 
+        # Re-run Layer 2 before touching a read-write connection. The caller has
+        # normally validated this SQL already, but defense-in-depth means this
+        # path must not trust that: it is the only one that can write.
+        is_safe, _, guardrail_err = validate_sql_security(cleaned_sql)
+        if not is_safe:
+            return QueryResult(
+                natural_query="[Approved SQL]",
+                generated_sql=cleaned_sql,
+                is_safe=False,
+                guardrail_error=guardrail_err,
+                columns=[],
+                rows=[],
+                dataframe=None,
+                execution_time_ms=(time.perf_counter() - start_time) * 1000.0,
+                provider_used="manual",
+                fallback_triggered=False,
+                error=guardrail_err,
+            )
+
         conn = None
         try:
             conn = get_readwrite_connection(self.db_path)

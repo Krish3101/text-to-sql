@@ -48,3 +48,16 @@ def test_execute_raw_sql_blocked_on_stacked(test_engine):
     res = test_engine.execute_raw_sql(stacked)
     assert res.is_safe is False
     assert "guardrail" in res.error.lower() or "stacked" in res.error.lower()
+
+
+def test_approved_query_revalidates_before_writing(tmp_path):
+    """The write path must not trust its caller: Layer 2 runs again before it opens
+    a read-write connection."""
+    from src.engine import TextToSQLEngine
+
+    engine = TextToSQLEngine(db_path=str(tmp_path / "scratch.db"))
+    result = engine.execute_approved_query("ATTACH DATABASE '/tmp/evil.db' AS evil")
+
+    assert result.is_safe is False
+    assert result.guardrail_error is not None
+    assert "attach" in result.guardrail_error.lower()

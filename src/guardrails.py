@@ -122,9 +122,12 @@ def validate_sql_security(
             raise SecurityViolationError(msg)
         return False, False, msg
 
-    # Deterministic AST classification using SQLGlot Expression types
-    # Check if statement is purely a read query (SELECT or WITH CTE returning a SELECT)
-    if isinstance(statement, exp.Select) or (isinstance(statement, exp.Expression) and stmt_key == "select"):
+    # Deterministic AST classification using SQLGlot Expression types.
+    # exp.Query covers SELECT, WITH-CTE selects and the set operations
+    # (UNION / UNION ALL / EXCEPT / INTERSECT); exp.Values covers a bare
+    # VALUES row constructor. All of these only read. Writes and DDL
+    # (Insert, Update, Delete, Drop, Create, Alter) fall outside both.
+    if isinstance(statement, (exp.Query, exp.Values)):
         needs_approval = False
     else:
         # INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, etc.
