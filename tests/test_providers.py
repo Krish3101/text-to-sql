@@ -1,12 +1,4 @@
-"""
-Unit Tests for Providers, Extraction & Normalization.
-"""
-
-from src.providers import (
-    FallbackOrchestrator,
-    OpenRouterProvider,
-    SQLExtractor,
-)
+from src.providers import OpenRouterProvider, SQLExtractor
 
 
 def test_sql_extractor_code_fences():
@@ -42,11 +34,4 @@ def test_openrouter_provider_missing_key():
     assert provider.is_available() is False
     res = provider.generate_sql("Show all customers")
     assert res.success is False
-    assert "missing or empty" in res.error.lower()
-
-
-def test_orchestrator_missing_api_key():
-    orchestrator = FallbackOrchestrator(primary_provider=OpenRouterProvider(api_key=""))
-    res = orchestrator.generate("Show all customers")
-    assert res.success is False
-    assert "API Key is missing" in res.error
+    assert "api key" in res.error.lower()

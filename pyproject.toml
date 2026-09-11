@@ -1,7 +1,7 @@
 [project]
 name = "text-to-sql"
 version = "1.0.0"
-description = "Text-to-SQL Generator with 3-Layer Security Guardrails for 7th Sem GenAI Capstone"
+description = "Turns English questions into checked SQLite queries"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -11,10 +11,8 @@ authors = [
 dependencies = [
     "sqlglot>=25.0.0",
     "sqlalchemy>=2.0.0",
-    "sqlparse>=0.5.0",
     "pandas>=2.2.0",
     "streamlit>=1.35.0",
-    "requests>=2.31.0",
     "python-dotenv>=1.0.0",
 ]
 

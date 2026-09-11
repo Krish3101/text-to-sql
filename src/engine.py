@@ -1,13 +1,4 @@
-"""
-Text-to-SQL Execution Engine & Fallback Orchestration.
-
-Provides:
-  - TextToSQLEngine: End-to-end translation pipeline with multi-provider failover,
-    Layer 1 prompt grounding, Layer 2 AST validation, and Layer 3 SQLite isolation.
-  - QueryResult: Comprehensive query result container with timing, DataFrame, and security status.
-  - SQLiteTimeoutGuard: Step-limit progress guard against Cartesian runaway queries.
-  - validate_sqlite_syntax: Pre-execution EXPLAIN QUERY PLAN syntax verification.
-"""
+"""Ties the pieces together: ask the model for SQL, check it, run it, return the rows."""
 
 import re
 import sqlite3
@@ -30,7 +21,6 @@ from src.guardrails import (
     validate_sql_security,
 )
 from src.providers import (
-    FallbackOrchestrator,
     OpenRouterProvider,
     SQLExtractor,
 )
@@ -39,7 +29,6 @@ from src.schema import get_schema_prompt_text
 
 @dataclass
 class QueryResult:
-    """Comprehensive container for query generation and execution results."""
     natural_query: str
     generated_sql: str
     is_safe: bool
@@ -49,10 +38,7 @@ class QueryResult:
     dataframe: Any | None # pd.DataFrame if pandas is available
     execution_time_ms: float
     provider_used: str
-    fallback_triggered: bool
     error: str | None = None
-    fallback_reason: str | None = None
-    retry_count: int = 0
     row_count: int = 0
     needs_approval: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -110,8 +96,11 @@ def validate_sqlite_syntax(sql: str, db_path: str = "ecommerce.db") -> tuple[boo
 
 class TextToSQLEngine:
     """
-    Unified Text-to-SQL Engine combining prompt grounding, multi-provider LLM support,
-    self-correction retry loop, 3-layer security defense, and execution pipeline.
+    Generates SQL for a question, checks it, and runs it against the database.
+
+    A query that fails SQLite's syntax check is sent back to the model with the error
+    attached, up to max_retries times, since a model given the actual error usually
+    fixes a wrong column name on the next attempt.
     """
 
     def __init__(
@@ -133,9 +122,6 @@ class TextToSQLEngine:
             api_key=self.api_key,
             model=self.model
         )
-        self.orchestrator = FallbackOrchestrator(
-            primary_provider=self.primary_provider
-        )
 
     def set_provider(self, provider_type: str = "openrouter", api_key: str | None = None, model: str | None = None) -> None:
         """Dynamically reconfigures the active provider backend."""
@@ -149,16 +135,13 @@ class TextToSQLEngine:
             api_key=self.api_key,
             model=self.model or "meta-llama/llama-3.1-70b-instruct"
         )
-        self.orchestrator = FallbackOrchestrator(
-            primary_provider=self.primary_provider
-        )
 
     def generate_sql(self, natural_query: str) -> str:
         """
         Generates clean, sanitized SQL for a natural language question.
         Applies self-correction retry loop if syntax validation fails.
         """
-        result = self.orchestrator.generate(natural_query, schema_info=self.schema_info)
+        result = self.primary_provider.generate_sql(natural_query, schema_info=self.schema_info)
         sql = SQLExtractor.clean_sql(result.sql)
 
         # If provider is available and syntax is invalid, attempt self-correction
@@ -183,17 +166,10 @@ class TextToSQLEngine:
         return sql
 
     def execute_query(self, natural_query: str) -> QueryResult:
-        """
-        Full end-to-end pipeline:
-        1. Natural Language -> SQL generation via FallbackOrchestrator
-        2. Layer 2 AST Guardrail Security Check (sqlparse)
-        3. Layer 3 SQLite read-only execution (mode=ro)
-        4. Package results into QueryResult
-        """
+        """Generate the SQL, check it, and run it read-only."""
         start_time = time.perf_counter()
 
-        # Step 1: Generate SQL
-        gen_result = self.orchestrator.generate(natural_query, schema_info=self.schema_info)
+        gen_result = self.primary_provider.generate_sql(natural_query, schema_info=self.schema_info)
         sql = SQLExtractor.clean_sql(gen_result.sql)
 
         if not gen_result.success or not sql:
@@ -208,11 +184,9 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                fallback_triggered=False,
                 error=gen_result.error or "Failed to generate SQL query from model."
             )
 
-        # Step 2: Validate Layer 2 AST Security Guardrail
         is_safe, needs_approval, guardrail_err = validate_sql_security(sql)
         if not is_safe:
             elapsed = (time.perf_counter() - start_time) * 1000.0
@@ -226,8 +200,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                fallback_triggered=gen_result.fallback_triggered,
-                fallback_reason=gen_result.fallback_reason,
                 error=f"Guardrail Security Violation: {guardrail_err}"
             )
 
@@ -243,13 +215,10 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                fallback_triggered=gen_result.fallback_triggered,
-                fallback_reason=gen_result.fallback_reason,
                 error=None,
                 needs_approval=True
             )
 
-        # Step 3: Execute on SQLite read-only connection
         conn = None
         try:
             conn = get_readonly_connection(self.db_path)
@@ -272,8 +241,6 @@ class TextToSQLEngine:
                 dataframe=df,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                fallback_triggered=gen_result.fallback_triggered,
-                fallback_reason=gen_result.fallback_reason,
                 error=None
             )
         except sqlite3.OperationalError as e:
@@ -288,8 +255,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                fallback_triggered=gen_result.fallback_triggered,
-                fallback_reason=gen_result.fallback_reason,
                 error=f"SQLite Execution Error: {e!s}"
             )
         except Exception as e:
@@ -304,8 +269,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                fallback_triggered=gen_result.fallback_triggered,
-                fallback_reason=gen_result.fallback_reason,
                 error=f"Unexpected Execution Error: {e!s}"
             )
         finally:
@@ -335,7 +298,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=f"Guardrail Security Violation: {guardrail_err}"
             )
 
@@ -351,7 +313,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=None,
                 needs_approval=True
             )
@@ -370,7 +331,6 @@ class TextToSQLEngine:
                 dataframe=df,
                 execution_time_ms=elapsed,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=None
             )
         except Exception as e:
@@ -385,7 +345,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=f"Execution Error: {e!s}"
             )
 
@@ -396,9 +355,9 @@ class TextToSQLEngine:
         start_time = time.perf_counter()
         cleaned_sql = SQLExtractor.clean_sql(sql)
 
-        # Re-run Layer 2 before touching a read-write connection. The caller has
-        # normally validated this SQL already, but defense-in-depth means this
-        # path must not trust that: it is the only one that can write.
+        # Re-check before opening a read-write connection. The caller has normally
+        # validated this SQL already, but this is the only path that can write, so it
+        # doesn't take that on trust.
         is_safe, _, guardrail_err = validate_sql_security(cleaned_sql)
         if not is_safe:
             return QueryResult(
@@ -411,7 +370,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=(time.perf_counter() - start_time) * 1000.0,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=guardrail_err,
             )
 
@@ -439,7 +397,6 @@ class TextToSQLEngine:
                 dataframe=df,
                 execution_time_ms=elapsed,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=None,
                 needs_approval=False,
                 row_count=rowcount
@@ -461,7 +418,6 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used="manual",
-                fallback_triggered=False,
                 error=f"Execution Error: {e!s}"
             )
         finally:

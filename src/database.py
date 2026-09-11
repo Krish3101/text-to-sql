@@ -1,5 +1,5 @@
 """
-SQLite Database Management Module for Text-to-SQL Generator.
+SQLite schema, seeding and read-only connections.
 
 Provides connection handling, read-only isolation (URI mode=ro), schema creation,
 and deterministic realistic mock data population for the E-Commerce database.
@@ -31,11 +31,9 @@ def get_readwrite_connection(db_path: str = "ecommerce.db") -> sqlite3.Connectio
 
 
 def get_readonly_connection(db_path: str = "ecommerce.db") -> sqlite3.Connection:
-    """
-    Returns a read-only SQLite connection using URI mode=ro.
-    This provides Layer 3 C-level engine write isolation.
-    Handles spaces and special characters cleanly via percent-encoded URI.
-    """
+    """Open the database with URI mode=ro, so SQLite itself refuses writes on this
+    connection even if a query slips past the guardrails. The path is percent-encoded
+    so spaces and special characters survive the URI."""
     resolved = get_resolved_db_path(db_path)
     if not resolved.exists():
         raise FileNotFoundError(f"Database file does not exist at {resolved}. Run init_db() first.")
@@ -288,7 +286,6 @@ def seed_database(conn: sqlite3.Connection) -> None:
         for i in range(30)
     }
 
-    # Build order records
     order_records = []
     order_id_counter = 1
 
@@ -328,7 +325,6 @@ def seed_database(conn: sqlite3.Connection) -> None:
             })
             order_id_counter += 1
 
-    # Build order items (exactly 180 records)
     order_items_records = []
     item_id_counter = 1
     discount_pool = [0.0, 0.0, 0.0, 0.0, 0.05, 0.10, 0.15, 0.20]
@@ -366,7 +362,6 @@ def seed_database(conn: sqlite3.Connection) -> None:
 
         order_records[order_idx]["total_amount"] = round(raw_order_total, 2)
 
-    # Insert orders
     cursor.executemany(
         """
         INSERT INTO orders (order_id, customer_id, order_date, status, shipping_city, shipping_state, total_amount, payment_method)
@@ -375,7 +370,6 @@ def seed_database(conn: sqlite3.Connection) -> None:
         order_records
     )
 
-    # Insert order items
     cursor.executemany(
         """
         INSERT INTO order_items (item_id, order_id, product_id, quantity, unit_price, discount)
@@ -400,11 +394,9 @@ def init_db(db_path: str = "ecommerce.db", force: bool = False) -> str:
 
     conn = sqlite3.connect(str(resolved), timeout=10.0)
     try:
-        # Create schema tables and indexes
         conn.executescript(SCHEMA_DDL)
         conn.commit()
 
-        # Check existing row counts
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM customers;")
         cust_count = cursor.fetchone()[0]

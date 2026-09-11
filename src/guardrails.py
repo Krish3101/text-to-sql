@@ -1,11 +1,10 @@
 """
-Multi-Layer Security Guardrails for Text-to-SQL Generator.
+Checks generated SQL before it is allowed to run.
 
-Implements Defense-in-Depth against SQL injection, DDL/DML tampering, stacked queries,
-and unauthorized database operations across three distinct layers:
-  - Layer 1: Prompt-Level Constraints & System Instructions
-  - Layer 2: AST & Lexical Syntax Validator using sqlparse
-  - Layer 3: Database Engine Hardware/C-Level Isolation (SQLite URI mode=ro)
+Queries are parsed with sqlglot rather than scanned for banned keywords, so
+multiple statements, ATTACH/DETACH and PRAGMA writable_schema are rejected by
+what the statement actually is. Reads then run on a connection opened mode=ro;
+writes are classified here and need approval before execution.
 """
 
 import re
@@ -17,10 +16,6 @@ from sqlglot import exp
 from sqlglot.errors import ParseError
 
 from src.database import get_readonly_connection
-
-# ==============================================================================
-# Security Exception Hierarchy
-# ==============================================================================
 
 class SecurityViolationError(Exception):
     """Base exception for all Text-to-SQL security guardrail violations."""
@@ -41,10 +36,6 @@ class InvalidSQLError(SecurityViolationError):
 class DatabaseReadOnlyError(SecurityViolationError):
     """Raised when the SQLite engine blocks a write or unauthorized command in read-only mode."""
 
-
-# ==============================================================================
-# Layer 2: AST Validation & Classification via SQLGlot
-# ==============================================================================
 
 def _strip_markdown_and_formatting(sql: str) -> str:
     """Strips markdown code blocks, backticks, and extra whitespace."""
@@ -136,37 +127,19 @@ def validate_sql_security(
     return True, needs_approval, None
 
 
-# ==============================================================================
-# Layer 3: Database Engine Isolation Execution Wrapper
-# ==============================================================================
-
 def execute_safe_query(
     sql: str,
     db_path: str = "ecommerce.db",
     params: tuple[Any, ...] | None = None,
 ) -> tuple[list[str], list[tuple[Any, ...]]]:
+    """Validate the SQL, then run it on a connection opened read-only.
+
+    Raises SecurityViolationError if the query is rejected, DatabaseReadOnlyError if
+    it gets past validation and SQLite still refuses it as a write.
     """
-    Executes a query through all 3 security layers:
-      1. Layer 2 AST & token security validation.
-      2. Layer 3 SQLite read-only URI mode execution (`mode=ro`).
-      3. Catches and wraps low-level engine write-attempt errors.
-
-    Args:
-        sql: The SQL query to validate and execute.
-        db_path: Path to SQLite database file.
-        params: Optional SQL query parameters.
-
-    Returns:
-        (columns, rows)
-
-    Raises:
-        SecurityViolationError: If Layer 2 or Layer 3 blocks the query.
-    """
-    # 1. Layer 2 AST Validation
     validate_sql_security(sql, raise_on_error=True)
     cleaned_sql = _strip_markdown_and_formatting(sql)
 
-    # 2. Layer 3 Execution against isolated read-only connection
     try:
         conn = get_readonly_connection(db_path)
     except Exception as e:
@@ -182,7 +155,7 @@ def execute_safe_query(
         err_msg = str(e).lower()
         if "readonly" in err_msg or "attempt to write" in err_msg or "not authorized" in err_msg:
             raise DatabaseReadOnlyError(
-                f"Layer 3 database engine blocked unauthorized write operation: {e!s}",
+                f"SQLite refused a write on the read-only connection: {e!s}",
                 {"original_error": str(e)}
             ) from e
         raise

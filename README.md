@@ -1,187 +1,80 @@
-# ⚡ Text-to-SQL Generator (CRUD & Guardrails)
+# Text-to-SQL
 
-> *Author: Krish Kalya ([krishkalya31012005@gmail.com](mailto:krishkalya31012005@gmail.com))*
+Ask a question in plain English, get a SQLite query back, and run it against a sample
+e-commerce database. Every generated query is checked before it runs, and anything that
+writes to the database needs your approval first.
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-FF4B4B?logo=streamlit)
-![SQLGlot](https://img.shields.io/badge/SQLGlot-AST--Engine-00ADD8)
-![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
-![Pytest](https://img.shields.io/badge/Tests-27%20Passed-brightgreen?logo=pytest)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+Built with Streamlit, using an LLM through OpenRouter.
 
----
+## The model writes the SQL. It doesn't decide whether the SQL runs.
 
-## 📌 Problem Statement
+Each generated query is parsed with sqlglot before execution, and judged from the parse
+tree rather than from its text:
 
-Relational databases power modern business infrastructure, yet querying them requires specialized SQL knowledge. Business stakeholders, analysts, and everyday users often struggle with complex JOINs, aggregations, and dialect-specific syntax.
+| what comes back | what happens |
+|---|---|
+| `SELECT * FROM orders` | runs, on a read-only connection |
+| `SELECT 1; DROP TABLE orders;` | rejected — multiple statements |
+| `ATTACH DATABASE '/tmp/x' AS x` | rejected — so is `DETACH`, so is `PRAGMA writable_schema` |
+| `UPDATE products SET price = 0` | shown to you first, runs only if you approve |
+| `DROP TABLE customers` | same — DDL is a write like any other |
 
-**Text-to-SQL Generator** bridges this gap using Generative AI. It allows users to ask questions in plain natural English and converts their intent into dialect-precise, optimized SQLite queries. To prevent unintended modifications or data corruption, the system enforces a strict **3-Layer Defense-in-Depth Security Model** with **Human-in-the-Loop approval** for any data-modifying queries (INSERT, UPDATE, DELETE, DDL).
+Reads run on a connection opened read-only, so a `SELECT` cannot write even if it somehow
+tried to.
 
----
+I parse the query instead of scanning it for banned keywords because keyword lists are easy
+to slip past — a comment, odd whitespace, or unusual casing defeats them — and sqlglot
+already knows what a statement actually is.
 
-## 🏗️ System Architecture & 3-Layer Defense-in-Depth
+## The database
 
-The pipeline enforces safety and dialect accuracy across three distinct boundaries:
+A sample e-commerce SQLite database, seeded identically every run: customers (30),
+products (25), orders (75), order_items (180). Because the seed is deterministic, the same
+question gives the same answer on a fresh clone, which is what makes the tests meaningful.
 
-```mermaid
-flowchart TD
-    User([User Natural Language Query]) --> UI[Streamlit Web Application]
-    UI --> PromptModule[Layer 1: Prompt Grounding\nSchema DDL + Few-Shot + SQLite Rules]
-    PromptModule --> LLM[OpenRouter Cloud LLM\nmeta-llama/llama-3.1-70b-instruct]
-    LLM --> Extractor[SQL Extractor & Cleaner\nRegex + Code Fences + Normalization]
-    Extractor --> Guardrail{Layer 2: AST Security Guardrail\nSQLGlot AST Parsing}
-    
-    Guardrail -- Stacked / Disallowed Commands --> Blocked[❌ Block Execution\nReturn Security Error]
-    Guardrail -- Read Query SELECT/WITH --> Layer3[Layer 3: SQLite C-Level Isolation\nURI mode=ro + Timeout Guard]
-    Guardrail -- Write Query INSERT/UPDATE/DELETE --> ApprovalModal[⚠️ Human-in-the-Loop Approval]
-    
-    ApprovalModal -- User Approves --> RWConn[Execute on Read-Write Connection\nPRAGMA foreign_keys = ON]
-    ApprovalModal -- User Rejects --> Cancelled[Transaction Aborted]
-    
-    Layer3 --> ResultDF[Query Results & Metrics]
-    RWConn --> ResultDF
-    ResultDF --> UI
-```
+## Running it
 
-### 🛡️ 3-Layer Security Architecture
-
-1. **Layer 1: Prompt Grounding & Dialect Constraints**
-   - Grounded with SQLite 3 DDL, column types, primary/foreign key relationships, and key business calculations.
-   - Multi-tier few-shot examples (filtering, aggregations, multi-table joins, and CRUD operations).
-   - Dialect rules preventing invalid function hallucination (e.g. prohibiting `DATE_TRUNC`, `STRING_AGG`, `CONCAT` and enforcing `strftime`, `GROUP_CONCAT`, `||`).
-2. **Layer 2: AST Security & Lexical Guardrail (via SQLGlot)**
-   - AST tokenization and tree validation using `sqlglot`.
-   - Multi-statement / stacked-query rejection (prevents SQL injection chains like `SELECT 1; DROP TABLE orders;`).
-   - Rejection of administrative and attachment commands (`ATTACH DATABASE`, `DETACH DATABASE`, `PRAGMA writable_schema`).
-   - Deterministic classification: Read queries execute automatically; Write queries require human confirmation.
-3. **Layer 3: Engine C-Level Isolation (SQLite URI `mode=ro`)**
-   - Read queries execute on SQLite connections opened with percent-encoded URI `?mode=ro` and `PRAGMA query_only = ON`.
-   - SQLite step-counter progress handler (`SQLiteTimeoutGuard`) preventing runaway Cartesian product stall queries.
-   - Approved write transactions enforce transactional consistency and `PRAGMA foreign_keys = ON;`.
-
----
-
-## 🗄️ Relational Database Schema
-
-The project includes an E-Commerce SQLite database (`ecommerce.db`) with 4 interconnected tables seeded deterministically:
-
-| Table | Records | Description | Primary Key | Foreign Keys |
-| :--- | :---: | :--- | :--- | :--- |
-| **`customers`** | 30 | Customer demographics, tiers (VIP, Regular, New, Inactive), locations | `customer_id` | — |
-| **`products`** | 25 | Merchandise catalog across 5 categories, prices, costs, stock levels | `product_id` | — |
-| **`orders`** | 75 | Order headers, dates, statuses (Delivered, Shipped, etc.), totals | `order_id` | `customer_id` → `customers.customer_id` |
-| **`order_items`** | 180 | Line item details, quantities, unit prices, discounts (0%–20%) | `item_id` | `order_id` → `orders.order_id`<br>`product_id` → `products.product_id` |
-
-### Key Domain Rules
-- **Line Item Revenue**: `quantity * unit_price * (1 - discount)`
-- **Completed Orders**: `status = 'Delivered'`
-- **Profit per Item**: `products.price - products.cost`
-
----
-
-## 🚀 Quick Start
-
-### 1. Prerequisites
-- **Python 3.11+** installed
-- OpenRouter API key ([openrouter.ai/keys](https://openrouter.ai/keys))
-
-### 2. Setup Virtual Environment & Dependencies
+Needs Python 3.11+ and an OpenRouter API key.
 
 ```bash
-# Clone the repository
-git clone https://github.com/Krish3101/text-to-sql.git
-cd text-to-sql
-
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+./scripts/start.sh
 ```
 
-### 3. Environment Configuration
+That creates the virtualenv, installs dependencies, copies `.env.example` to `.env` if it's
+missing, and opens the app at http://localhost:8501. Add your `OPENROUTER_API_KEY` to `.env`
+before asking anything.
 
-Copy the sample environment file:
-```bash
-cp .env.example .env
-```
-Edit `.env` and paste your OpenRouter API key:
-```env
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
-OPENROUTER_MODEL=meta-llama/llama-3.1-70b-instruct
-DB_PATH=ecommerce.db
-```
-
-### 4. Run the Application
+`./scripts/reset.sh` removes the database, the virtualenv and the caches.
 
 ```bash
-streamlit run app.py
-```
-Open your browser and navigate to: **http://localhost:8501**
-
----
-
-## 💡 Example Benchmark Queries
-
-The web UI includes **Quick Demo Chips** for one-click testing:
-
-### Tier 1: Filters & Sorting
-- *"List all products in the 'Electronics' category with price under 100 sorted by price."*
-- *"Show all customers from 'New York' who signed up in 2025."*
-- *"Find all out-of-stock products across all categories."*
-
-### Tier 2: Aggregations & Grouping
-- *"Calculate the total revenue and number of orders for each payment method for delivered orders."*
-- *"What is the average rating and total stock for each product category?"*
-- *"Show the monthly total sales revenue for 2025."*
-
-### Tier 3: Multi-Table Relational JOINs
-- *"What are the top 5 customers by total spending?"* (Joins `customers` + `orders` + `order_items`)
-- *"Find the top 3 best-selling products by total revenue generated."* (Joins `products` + `order_items`)
-- *"Which customers have placed zero orders?"* (LEFT JOIN edge case)
-
-### Controlled CRUD & Write Operations (Requires Approval)
-- *"Add a new product called 'Wireless Earbuds' in 'Electronics' with price 89.99, cost 40.00, stock 50, rating 4.6, is_active 1."*
-- *"Update the status of order 10 to 'Delivered'."*
-- *"Delete customer with ID 99."*
-
----
-
-## 🧪 Automated Testing
-
-The project includes an automated test suite verifying database integrity, guardrails, SQL parsing, and engine execution.
-
-```bash
-# Run all unit tests
 pytest tests/ -v
-
-# Run code style & lint checks
-ruff check .
 ```
 
-All **27 tests** pass covering:
-- Database seeding, schema creation, stats introspection, foreign keys, and reset.
-- AST parsing, stacked query rejection, read vs write classification, disallowed command blocking.
-- Set operations (UNION / EXCEPT / INTERSECT) classified as reads rather than writes.
-- SQL code fence extraction, cleaning, and normalization.
-- Safe read-only execution and write approval gating, including re-validation on the write path.
+Covers the guardrails (stacked queries, read/write classification, blocked commands), SQL
+extraction and cleaning, database seeding, and the write-approval path.
 
----
+```
+app.py              Streamlit entry point
+src/
+  prompt.py         builds the prompt with schema and examples
+  providers.py      OpenRouter call
+  engine.py         ties generation, checking and execution together
+  guardrails.py     sqlglot parsing, read vs write classification
+  database.py       schema, seeding, connections
+  schema.py         schema introspection for the prompt
+  ui.py             Streamlit tabs
+scripts/
+  start.sh          venv, deps, run
+  reset.sh          drop the database and caches
+tests/
+```
 
-## 🎯 Version 1.0 Scope vs Roadmap
+## Limitations
 
-| Feature Area | Version 1.0 | Version 2.0 Roadmap |
-| :--- | :--- | :--- |
-| **LLM Backend** | OpenRouter Cloud LLM (`llama-3.1-70b-instruct`) | Multi-Provider + Local Ollama support |
-| **Query Memory** | Single-turn prompt grounding | Multi-turn conversational context & follow-ups |
-| **Security** | 3-Layer Defense-in-Depth (AST + `mode=ro`) | Role-based table/column access control (RBAC) |
-| **Write Operations** | Human-in-the-loop approval confirmation | Transaction staging & visual diff review |
-| **Database** | Fixed e-commerce schema with reset | Dynamic connection to external Postgres / MySQL |
-| **Explainability** | Execution latency and SQL code viewer | Natural language explanation of query logic & cost |
+The schema is fixed — it only queries the bundled e-commerce database, not one you point it
+at. Each question is independent, so you can't ask a follow-up that refers back to the
+previous answer.
 
----
+## License
 
-## 📄 License
-
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+[MIT](LICENSE)

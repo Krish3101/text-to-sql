@@ -1,8 +1,3 @@
-"""
-Text-to-SQL Generator (Version 1.0)
-Author: Krish Kalya <krishkalya31012005@gmail.com>
-"""
-
 import os
 from pathlib import Path
 
@@ -23,13 +18,8 @@ from src.ui import (
     render_schema_explorer_tab,
 )
 
-# ==============================================================================
-# Streamlit Page Configuration & Custom CSS
-# ==============================================================================
-
 st.set_page_config(
-    page_title="Text-to-SQL Generator",
-    page_icon="⚡",
+    page_title="Text-to-SQL",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -71,10 +61,6 @@ CUSTOM_CSS = """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
-# ==============================================================================
-# Database Initialization & Session State
-# ==============================================================================
-
 DB_PATH = "ecommerce.db"
 
 # Ensure database exists and is seeded with deterministic mock records
@@ -88,17 +74,11 @@ if "db_stats" not in st.session_state:
         st.session_state["db_stats"] = {"customers": 30, "products": 25, "orders": 75, "order_items": 180}
 
 
-# ==============================================================================
-# Sidebar Configuration & Model Selector
-# ==============================================================================
-
 with st.sidebar:
-    st.markdown("## ⚡ System Configuration")
-    st.caption("Version 1.0")
+    st.markdown("## Configuration")
 
-    st.markdown("### 🤖 Cloud LLM Backend")
+    st.markdown("### Model")
 
-    # Supported and recommended OpenRouter models
     MODEL_OPTIONS = [
         "meta-llama/llama-3.1-70b-instruct",
         "meta-llama/llama-3.3-70b-instruct",
@@ -132,29 +112,25 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-section"></div>', unsafe_allow_html=True)
 
-    # Database Operations & Dynamic Live Status
-    st.markdown("### 🗄️ Database Status")
-    st.caption(f"📁 SQLite: `{DB_PATH}`")
+    st.markdown("### Database")
+    st.caption(f"`{DB_PATH}`")
 
-    # Always fetch live stats dynamically from database
     stats = get_database_stats(DB_PATH)
     st.session_state["db_stats"] = stats
 
     for tbl_name, count in stats.items():
         st.text(f"• {tbl_name.capitalize()}: {count} rows")
 
-    # Database Reset Button to easily restore clean state after testing write queries
-    if st.button("🔄 Reset Database to Default", use_container_width=True, help="Wipes modifications and resets back to 30 customers, 25 products, 75 orders, 180 items"):
+    if st.button("Reset database", use_container_width=True, help="Drops any writes you approved and re-seeds from scratch"):
         with st.spinner("Resetting and re-seeding database..."):
             reset_database(DB_PATH)
             st.session_state["db_stats"] = get_database_stats(DB_PATH)
             st.session_state["last_query_result"] = None
-            st.success("Database restored to default!")
+            st.success("Database re-seeded.")
             st.rerun()
 
-    # Quick Table Inspector Dropdown
     if stats:
-        with st.expander("🔍 Inspect Database Tables", expanded=False):
+        with st.expander("Browse tables", expanded=False):
             selected_table = st.selectbox("Select table to preview:", options=list(stats.keys()), key="sidebar_table_inspect")
             if selected_table:
                 try:
@@ -170,10 +146,6 @@ with st.sidebar:
                 except Exception as e:
                     st.caption(f"Could not preview table: {e}")
 
-
-# ==============================================================================
-# TextToSQLEngine Management
-# ==============================================================================
 
 # Maintain singleton TextToSQLEngine in session state
 if "sql_engine" not in st.session_state:
@@ -191,21 +163,17 @@ else:
 engine = st.session_state["sql_engine"]
 
 
-# ==============================================================================
-# Main Page Header & Multi-Tab Layout
-# ==============================================================================
-
-st.markdown("# ⚡ Text-to-SQL Generator (CRUD & Guardrails)")
+st.markdown("# Text-to-SQL")
 st.markdown(
-    "Translate natural language queries into safe, dialect-precise SQLite statements with "
-    "**3-Layer Defense-in-Depth Security** and **Human-in-the-Loop Write Approval**."
+    "Ask a question in plain English and get a SQLite query back. Every query is checked "
+    "before it runs, and anything that writes needs your approval first."
 )
 st.markdown("<br>", unsafe_allow_html=True)
 
 tab_query, tab_schema, tab_arch = st.tabs([
-    "💬 Live Query & CRUD",
-    "🗄️ Schema & ERD Explorer",
-    "🏛️ Architecture & Security"
+    "Query",
+    "Schema",
+    "How it works"
 ])
 
 with tab_query:
