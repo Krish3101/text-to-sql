@@ -19,19 +19,19 @@ def render_live_query_tab(engine: TextToSQLEngine, db_path: str) -> None:
     st.markdown("##### Examples")
     q_col1, q_col2, q_col3, q_col4 = st.columns(4)
     with q_col1:
-        if st.button("Top 5 customers", use_container_width=True):
+        if st.button("Top 5 customers", width="stretch"):
             st.session_state["nl_prompt_textarea"] = "What are the top 5 customers by total spending?"
             st.rerun()
     with q_col2:
-        if st.button("Revenue by payment", use_container_width=True):
+        if st.button("Revenue by payment", width="stretch"):
             st.session_state["nl_prompt_textarea"] = "Calculate the total revenue and number of orders for each payment method for delivered orders."
             st.rerun()
     with q_col3:
-        if st.button("Electronics under $100", use_container_width=True):
+        if st.button("Electronics under $100", width="stretch"):
             st.session_state["nl_prompt_textarea"] = "List all products in the 'Electronics' category with price under 100 sorted by price."
             st.rerun()
     with q_col4:
-        if st.button("Add a product", use_container_width=True):
+        if st.button("Add a product", width="stretch"):
             st.session_state["nl_prompt_textarea"] = "Add a new product called 'Wireless Earbuds' in 'Electronics' with price 89.99, cost 40.00, stock 50, rating 4.6, is_active 1."
             st.rerun()
 
@@ -44,9 +44,9 @@ def render_live_query_tab(engine: TextToSQLEngine, db_path: str) -> None:
 
     col_btn1, col_btn2, _ = st.columns([2, 2, 4])
     with col_btn1:
-        run_clicked = st.button("Generate and run", type="primary", use_container_width=True)
+        run_clicked = st.button("Generate and run", type="primary", width="stretch")
     with col_btn2:
-        st.button("Clear", on_click=_clear_input, use_container_width=True)
+        st.button("Clear", on_click=_clear_input, width="stretch")
 
     if run_clicked and user_prompt.strip():
         with st.spinner("Translating natural language to SQL & verifying safety..."):
@@ -90,7 +90,7 @@ def _display_query_result(result: QueryResult) -> None:
 
         col_app1, col_app2 = st.columns([2, 5])
         with col_app1:
-            if st.button("Approve and run", type="primary", use_container_width=True):
+            if st.button("Approve and run", type="primary", width="stretch"):
                 with st.spinner("Executing approved write transaction..."):
                     engine = st.session_state["sql_engine"]
                     approved_result = engine.execute_approved_query(result.generated_sql)
@@ -106,7 +106,7 @@ def _display_query_result(result: QueryResult) -> None:
         return
 
     if result.dataframe is not None and not result.dataframe.empty:
-        st.dataframe(result.dataframe, use_container_width=True, hide_index=True)
+        st.dataframe(result.dataframe, width="stretch", hide_index=True)
         csv_data = result.dataframe.to_csv(index=False)
         st.download_button(
             label="Download CSV",
@@ -144,7 +144,7 @@ def render_schema_explorer_tab(db_path: str) -> None:
                 {"Column": c["name"], "Data Type": c["type"], "Description": c["description"]}
                 for c in tbl_info["columns"]
             ]
-            st.dataframe(col_data, use_container_width=True, hide_index=True)
+            st.dataframe(col_data, width="stretch", hide_index=True)
 
     # Relationships section
     st.markdown("---")

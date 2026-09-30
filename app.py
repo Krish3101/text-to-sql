@@ -103,7 +103,7 @@ with st.sidebar:
     for tbl_name, count in stats.items():
         st.text(f"• {tbl_name.capitalize()}: {count} rows")
 
-    if st.button("Reset database", use_container_width=True, help="Drops any writes you approved and re-seeds from scratch"):
+    if st.button("Reset database", width="stretch", help="Drops any writes you approved and re-seeds from scratch"):
         with st.spinner("Resetting and re-seeding database..."):
             reset_database(DB_PATH)
             st.session_state["db_stats"] = get_database_stats(DB_PATH)
@@ -122,7 +122,7 @@ with st.sidebar:
                     cols, rows = execute_readonly_query(f"SELECT * FROM `{selected_table}` LIMIT 10;", DB_PATH)
                     if rows:
                         df_preview = pd.DataFrame(rows, columns=cols)
-                        st.dataframe(df_preview, use_container_width=True, hide_index=True)
+                        st.dataframe(df_preview, width="stretch", hide_index=True)
                     else:
                         st.info("Table is empty.")
                 except Exception as e:
