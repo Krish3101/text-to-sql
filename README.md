@@ -4,7 +4,10 @@ Ask a question in plain English, get a SQLite query back, and run it against a s
 e-commerce database. Every generated query is checked before it runs, and anything that
 writes to the database needs your approval first.
 
-Built with Streamlit, using an LLM through OpenRouter.
+Built with Streamlit. The SQL comes from `nvidia/nemotron-3-super-120b-a12b:free` through
+OpenRouter, which is free, so a free OpenRouter key is all it needs.
+
+![A question, the SQL generated for it, and the result](docs/query.png)
 
 ## The model writes the SQL. It doesn't decide whether the SQL runs.
 
@@ -31,6 +34,23 @@ already knows what a statement actually is.
 A sample e-commerce SQLite database, seeded identically every run: customers (30),
 products (25), orders (75), order_items (180). Because the seed is deterministic, the same
 question gives the same answer on a fresh clone, which is what makes the tests meaningful.
+
+## How often it's right
+
+`scripts/eval.py` asks 20 questions about the sample database, each with a reference query I
+wrote by hand, and counts an answer correct when it returns the same rows.
+
+On the last full run (30 Sept 2026) it got **16 of 20**. Three of the misses were the right
+answer in a different shape: two added a column nobody asked for, and one worked out a
+customer's total from the order items instead of the order totals and came out a cent
+different. The check wants the same rows and columns as the reference, so those count as
+wrong. The fourth came back with no SQL in the reply at all.
+
+```bash
+python -m scripts.eval
+```
+
+Each question is one request, and OpenRouter's free tier allows 50 a day.
 
 ## Running it
 
@@ -66,6 +86,7 @@ src/
 scripts/
   start.sh          venv, deps, run
   reset.sh          drop the database and caches
+  eval.py           the 20-question accuracy check
 tests/
 ```
 

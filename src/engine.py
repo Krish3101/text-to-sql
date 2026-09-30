@@ -184,7 +184,7 @@ class TextToSQLEngine:
                 dataframe=None,
                 execution_time_ms=elapsed,
                 provider_used=gen_result.provider,
-                error=gen_result.error or "Failed to generate SQL query from model."
+                error=gen_result.error or "The model replied, but there was no SQL in its answer. Try asking again."
             )
 
         is_safe, needs_approval, guardrail_err = validate_sql_security(sql)
