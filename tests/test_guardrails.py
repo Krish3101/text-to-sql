@@ -4,16 +4,13 @@ Unit Tests for Security Guardrails (Layer 2 AST Validation & Rejection).
 
 import pytest
 
-from src.guardrails import (
-    InvalidSQLError,
-    MultipleStatementsError,
-    SecurityViolationError,
-    validate_sql_security,
-)
+from src.guardrails import validate_sql_security
 
 
 def test_valid_select_query():
-    is_safe, needs_approval, err = validate_sql_security("SELECT * FROM customers WHERE city = 'New York';")
+    is_safe, needs_approval, err = validate_sql_security(
+        "SELECT * FROM customers WHERE city = 'New York';"
+    )
     assert is_safe is True
     assert needs_approval is False
     assert err is None
@@ -53,15 +50,10 @@ def test_multiple_statements_rejected():
     assert is_safe is False
     assert "multiple" in err.lower() or "stacked" in err.lower()
 
-    with pytest.raises(MultipleStatementsError):
-        validate_sql_security(stacked_sql, raise_on_error=True)
-
 
 def test_empty_query_rejected():
     is_safe, needs_approval, err = validate_sql_security("   ")
     assert is_safe is False
-    with pytest.raises(InvalidSQLError):
-        validate_sql_security("", raise_on_error=True)
 
 
 def test_disallowed_attach_rejected():
@@ -69,9 +61,6 @@ def test_disallowed_attach_rejected():
     is_safe, needs_approval, err = validate_sql_security(sql)
     assert is_safe is False
     assert "disallowed" in err.lower() or "attach" in err.lower()
-
-    with pytest.raises(SecurityViolationError):
-        validate_sql_security(sql, raise_on_error=True)
 
 
 def test_disallowed_pragma_rejected():

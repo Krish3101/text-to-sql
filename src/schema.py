@@ -74,25 +74,43 @@ CREATE INDEX IF NOT EXISTS idx_customers_city_state ON customers(city, state);
 CREATE INDEX IF NOT EXISTS idx_customers_segment ON customers(customer_segment);
 """
 
-TABLE_NAMES: list[str] = ["customers", "products", "orders", "order_items"]
-
 TABLE_DEFINITIONS: dict[str, dict[str, Any]] = {
     "customers": {
         "description": "Stores user demographics, contact info, geographical location, and segment classification.",
         "primary_key": "customer_id",
         "foreign_keys": [],
         "columns": [
-            {"name": "customer_id", "type": "INTEGER", "description": "Primary key, unique customer identifier"},
+            {
+                "name": "customer_id",
+                "type": "INTEGER",
+                "description": "Primary key, unique customer identifier",
+            },
             {"name": "first_name", "type": "TEXT", "description": "Customer given name"},
             {"name": "last_name", "type": "TEXT", "description": "Customer family name"},
             {"name": "email", "type": "TEXT", "description": "Unique contact email address"},
             {"name": "phone", "type": "TEXT", "description": "Contact phone number (nullable)"},
             {"name": "city", "type": "TEXT", "description": "Customer billing/residence city"},
-            {"name": "state", "type": "TEXT", "description": "Two-letter US state code or state name"},
-            {"name": "country", "type": "TEXT", "description": "Country code or name, default 'USA'"},
+            {
+                "name": "state",
+                "type": "TEXT",
+                "description": "Two-letter US state code or state name",
+            },
+            {
+                "name": "country",
+                "type": "TEXT",
+                "description": "Country code or name, default 'USA'",
+            },
             {"name": "postal_code", "type": "TEXT", "description": "Postal or ZIP code"},
-            {"name": "created_at", "type": "TIMESTAMP", "description": "Account registration timestamp (ISO format)"},
-            {"name": "customer_segment", "type": "TEXT", "description": "Customer tier: 'VIP', 'Regular', 'New', 'Inactive'"},
+            {
+                "name": "created_at",
+                "type": "TIMESTAMP",
+                "description": "Account registration timestamp (ISO format)",
+            },
+            {
+                "name": "customer_segment",
+                "type": "TEXT",
+                "description": "Customer tier: 'VIP', 'Regular', 'New', 'Inactive'",
+            },
         ],
     },
     "products": {
@@ -100,31 +118,91 @@ TABLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "primary_key": "product_id",
         "foreign_keys": [],
         "columns": [
-            {"name": "product_id", "type": "INTEGER", "description": "Primary key, unique product identifier"},
+            {
+                "name": "product_id",
+                "type": "INTEGER",
+                "description": "Primary key, unique product identifier",
+            },
             {"name": "product_name", "type": "TEXT", "description": "Merchandise title/name"},
-            {"name": "category", "type": "TEXT", "description": "Product category (Electronics, Apparel, Footwear, Home & Kitchen, Books & Media)"},
+            {
+                "name": "category",
+                "type": "TEXT",
+                "description": "Product category (Electronics, Apparel, Footwear, Home & Kitchen, Books & Media)",
+            },
             {"name": "price", "type": "REAL", "description": "Retail selling price in USD (>= 0)"},
-            {"name": "cost", "type": "REAL", "description": "Wholesale acquisition cost in USD (>= 0)"},
-            {"name": "stock_quantity", "type": "INTEGER", "description": "Current inventory stock on hand (>= 0)"},
-            {"name": "rating", "type": "REAL", "description": "Average review rating from 0.0 to 5.0"},
-            {"name": "is_active", "type": "INTEGER", "description": "Availability flag: 1 if active, 0 if discontinued"},
+            {
+                "name": "cost",
+                "type": "REAL",
+                "description": "Wholesale acquisition cost in USD (>= 0)",
+            },
+            {
+                "name": "stock_quantity",
+                "type": "INTEGER",
+                "description": "Current inventory stock on hand (>= 0)",
+            },
+            {
+                "name": "rating",
+                "type": "REAL",
+                "description": "Average review rating from 0.0 to 5.0",
+            },
+            {
+                "name": "is_active",
+                "type": "INTEGER",
+                "description": "Availability flag: 1 if active, 0 if discontinued",
+            },
         ],
     },
     "orders": {
         "description": "Header records for customer purchase transactions, timestamps, delivery statuses, and totals.",
         "primary_key": "order_id",
         "foreign_keys": [
-            {"column": "customer_id", "references_table": "customers", "references_column": "customer_id"}
+            {
+                "column": "customer_id",
+                "references_table": "customers",
+                "references_column": "customer_id",
+            }
         ],
         "columns": [
-            {"name": "order_id", "type": "INTEGER", "description": "Primary key, unique order identifier"},
-            {"name": "customer_id", "type": "INTEGER", "description": "Foreign key referencing customers.customer_id"},
-            {"name": "order_date", "type": "TIMESTAMP", "description": "Order placement timestamp (ISO format)"},
-            {"name": "status", "type": "TEXT", "description": "Order lifecycle status: 'Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'"},
-            {"name": "shipping_city", "type": "TEXT", "description": "Destination city for shipping"},
-            {"name": "shipping_state", "type": "TEXT", "description": "Destination state for shipping"},
-            {"name": "total_amount", "type": "REAL", "description": "Total order charge in USD after discounts (>= 0)"},
-            {"name": "payment_method", "type": "TEXT", "description": "Payment method used: 'Credit Card', 'PayPal', 'Debit Card', 'Apple Pay', 'Bank Transfer'"},
+            {
+                "name": "order_id",
+                "type": "INTEGER",
+                "description": "Primary key, unique order identifier",
+            },
+            {
+                "name": "customer_id",
+                "type": "INTEGER",
+                "description": "Foreign key referencing customers.customer_id",
+            },
+            {
+                "name": "order_date",
+                "type": "TIMESTAMP",
+                "description": "Order placement timestamp (ISO format)",
+            },
+            {
+                "name": "status",
+                "type": "TEXT",
+                "description": "Order lifecycle status: 'Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded'",
+            },
+            {
+                "name": "shipping_city",
+                "type": "TEXT",
+                "description": "Destination city for shipping",
+            },
+            {
+                "name": "shipping_state",
+                "type": "TEXT",
+                "description": "Destination state for shipping",
+            },
+            {
+                "name": "total_amount",
+                "type": "REAL",
+                "description": "Total order charge in USD after discounts (>= 0)",
+            },
+            {
+                "name": "payment_method",
+                "type": "TEXT",
+                "description": "Payment method used: 'Credit Card', 'PayPal', 'Debit Card', 'Apple Pay', 'Bank Transfer'",
+            },
         ],
     },
     "order_items": {
@@ -132,15 +210,39 @@ TABLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "primary_key": "item_id",
         "foreign_keys": [
             {"column": "order_id", "references_table": "orders", "references_column": "order_id"},
-            {"column": "product_id", "references_table": "products", "references_column": "product_id"},
+            {
+                "column": "product_id",
+                "references_table": "products",
+                "references_column": "product_id",
+            },
         ],
         "columns": [
-            {"name": "item_id", "type": "INTEGER", "description": "Primary key, unique line item identifier"},
-            {"name": "order_id", "type": "INTEGER", "description": "Foreign key referencing orders.order_id"},
-            {"name": "product_id", "type": "INTEGER", "description": "Foreign key referencing products.product_id"},
+            {
+                "name": "item_id",
+                "type": "INTEGER",
+                "description": "Primary key, unique line item identifier",
+            },
+            {
+                "name": "order_id",
+                "type": "INTEGER",
+                "description": "Foreign key referencing orders.order_id",
+            },
+            {
+                "name": "product_id",
+                "type": "INTEGER",
+                "description": "Foreign key referencing products.product_id",
+            },
             {"name": "quantity", "type": "INTEGER", "description": "Units purchased (> 0)"},
-            {"name": "unit_price", "type": "REAL", "description": "Unit sale price at time of purchase (>= 0)"},
-            {"name": "discount", "type": "REAL", "description": "Discount fraction applied (0.0 to 1.0)"},
+            {
+                "name": "unit_price",
+                "type": "REAL",
+                "description": "Unit sale price at time of purchase (>= 0)",
+            },
+            {
+                "name": "discount",
+                "type": "REAL",
+                "description": "Discount fraction applied (0.0 to 1.0)",
+            },
         ],
     },
 }
@@ -152,7 +254,7 @@ RELATIONSHIPS: list[dict[str, str]] = [
         "to_table": "customers",
         "to_column": "customer_id",
         "type": "Many-to-One",
-        "description": "Each order belongs to exactly one customer. A customer can place zero or more orders."
+        "description": "Each order belongs to exactly one customer. A customer can place zero or more orders.",
     },
     {
         "from_table": "order_items",
@@ -160,7 +262,7 @@ RELATIONSHIPS: list[dict[str, str]] = [
         "to_table": "orders",
         "to_column": "order_id",
         "type": "Many-to-One",
-        "description": "Each order item belongs to exactly one order. An order consists of one or more order items."
+        "description": "Each order item belongs to exactly one order. An order consists of one or more order items.",
     },
     {
         "from_table": "order_items",
@@ -168,22 +270,9 @@ RELATIONSHIPS: list[dict[str, str]] = [
         "to_table": "products",
         "to_column": "product_id",
         "type": "Many-to-One",
-        "description": "Each order item references a product. A product can appear in multiple order items."
+        "description": "Each order item references a product. A product can appear in multiple order items.",
     },
 ]
-
-
-def get_table_columns(table_name: str) -> list[str]:
-    """Returns list of column names for a given table."""
-    table_meta = TABLE_DEFINITIONS.get(table_name)
-    if not table_meta:
-        return []
-    return [col["name"] for col in table_meta["columns"]]
-
-
-def get_relationships() -> list[dict[str, str]]:
-    """Returns relational graph relationships between tables."""
-    return RELATIONSHIPS
 
 
 def get_erd_data() -> dict[str, Any]:

@@ -5,7 +5,6 @@ Provides SQLite 3 dialect rules, dynamic schema grounding, and multi-tier
 few-shot examples (Tier 1: Filters, Tier 2: Aggregations, Tier 3: Joins).
 """
 
-
 from src.schema import get_schema_prompt_text
 
 SYSTEM_PROMPT_TEMPLATE = """You are an expert SQLite 3 SQL generator specializing in relational e-commerce databases.
@@ -130,15 +129,11 @@ def build_system_prompt(schema_info: str | None = None) -> str:
         schema_info = get_schema_prompt_text()
 
     return SYSTEM_PROMPT_TEMPLATE.format(
-        schema_info=schema_info.strip(),
-        few_shot_examples=FEW_SHOT_EXAMPLES.strip()
+        schema_info=schema_info.strip(), few_shot_examples=FEW_SHOT_EXAMPLES.strip()
     )
 
 
-def get_sqlite_prompt(
-    natural_query: str,
-    schema_info: str | None = None
-) -> tuple[str, str]:
+def get_sqlite_prompt(natural_query: str, schema_info: str | None = None) -> tuple[str, str]:
     """
     Returns (system_prompt, user_prompt) tuple ready for LLM consumption.
     """

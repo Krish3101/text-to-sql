@@ -22,51 +22,85 @@ from src.database import init_db
 from src.engine import TextToSQLEngine
 
 QUESTIONS = [
-    ("How many customers are there?",
-     "SELECT COUNT(*) FROM customers"),
-    ("How many products are in the Electronics category?",
-     "SELECT COUNT(*) FROM products WHERE category = 'Electronics'"),
-    ("What is the name of the most expensive product?",
-     "SELECT product_name FROM products ORDER BY price DESC LIMIT 1"),
-    ("How many orders were cancelled?",
-     "SELECT COUNT(*) FROM orders WHERE status = 'Cancelled'"),
-    ("What is the combined total amount of all delivered orders?",
-     "SELECT SUM(total_amount) FROM orders WHERE status = 'Delivered'"),
-    ("What is the average product price in each category? Return the category and the average.",
-     "SELECT category, AVG(price) FROM products GROUP BY category"),
-    ("How many customers are in the VIP segment?",
-     "SELECT COUNT(*) FROM customers WHERE customer_segment = 'VIP'"),
-    ("Which payment method is used on the most orders?",
-     "SELECT payment_method FROM orders GROUP BY payment_method ORDER BY COUNT(*) DESC LIMIT 1"),
-    ("List the first and last names of customers who have never placed an order.",
-     "SELECT first_name, last_name FROM customers"
-     " WHERE customer_id NOT IN (SELECT customer_id FROM orders)"),
-    ("How many units have been sold in each product category? Return the category and the total.",
-     "SELECT p.category, SUM(oi.quantity) FROM order_items oi"
-     " JOIN products p ON p.product_id = oi.product_id GROUP BY p.category"),
-    ("How many orders were placed in 2025?",
-     "SELECT COUNT(*) FROM orders WHERE strftime('%Y', order_date) = '2025'"),
-    ("What are the names of the three highest rated products?",
-     "SELECT product_name FROM products ORDER BY rating DESC LIMIT 3"),
-    ("How much has Alice Johnson spent in total across her orders?",
-     "SELECT SUM(o.total_amount) FROM orders o JOIN customers c ON c.customer_id = o.customer_id"
-     " WHERE c.first_name = 'Alice' AND c.last_name = 'Johnson'"),
-    ("How many different customers have placed at least one order?",
-     "SELECT COUNT(DISTINCT customer_id) FROM orders"),
-    ("Which products are out of stock? Return their names.",
-     "SELECT product_name FROM products WHERE stock_quantity = 0"),
-    ("List the names of products that have never been ordered.",
-     "SELECT product_name FROM products"
-     " WHERE product_id NOT IN (SELECT product_id FROM order_items)"),
-    ("What is the average order total for each payment method? Return the method and the average.",
-     "SELECT payment_method, AVG(total_amount) FROM orders GROUP BY payment_method"),
-    ("How many orders were shipped to the state CA?",
-     "SELECT COUNT(*) FROM orders WHERE shipping_state = 'CA'"),
-    ("How many orders has Carol Williams placed?",
-     "SELECT COUNT(*) FROM orders o JOIN customers c ON c.customer_id = o.customer_id"
-     " WHERE c.first_name = 'Carol' AND c.last_name = 'Williams'"),
-    ("How many products are no longer active?",
-     "SELECT COUNT(*) FROM products WHERE is_active = 0"),
+    ("How many customers are there?", "SELECT COUNT(*) FROM customers"),
+    (
+        "How many products are in the Electronics category?",
+        "SELECT COUNT(*) FROM products WHERE category = 'Electronics'",
+    ),
+    (
+        "What is the name of the most expensive product?",
+        "SELECT product_name FROM products ORDER BY price DESC LIMIT 1",
+    ),
+    ("How many orders were cancelled?", "SELECT COUNT(*) FROM orders WHERE status = 'Cancelled'"),
+    (
+        "What is the combined total amount of all delivered orders?",
+        "SELECT SUM(total_amount) FROM orders WHERE status = 'Delivered'",
+    ),
+    (
+        "What is the average product price in each category? Return the category and the average.",
+        "SELECT category, AVG(price) FROM products GROUP BY category",
+    ),
+    (
+        "How many customers are in the VIP segment?",
+        "SELECT COUNT(*) FROM customers WHERE customer_segment = 'VIP'",
+    ),
+    (
+        "Which payment method is used on the most orders?",
+        "SELECT payment_method FROM orders GROUP BY payment_method ORDER BY COUNT(*) DESC LIMIT 1",
+    ),
+    (
+        "List the first and last names of customers who have never placed an order.",
+        "SELECT first_name, last_name FROM customers"
+        " WHERE customer_id NOT IN (SELECT customer_id FROM orders)",
+    ),
+    (
+        "How many units have been sold in each product category? Return the category and the total.",
+        "SELECT p.category, SUM(oi.quantity) FROM order_items oi"
+        " JOIN products p ON p.product_id = oi.product_id GROUP BY p.category",
+    ),
+    (
+        "How many orders were placed in 2025?",
+        "SELECT COUNT(*) FROM orders WHERE strftime('%Y', order_date) = '2025'",
+    ),
+    (
+        "What are the names of the three highest rated products?",
+        "SELECT product_name FROM products ORDER BY rating DESC LIMIT 3",
+    ),
+    (
+        "How much has Alice Johnson spent in total across her orders?",
+        "SELECT SUM(o.total_amount) FROM orders o JOIN customers c ON c.customer_id = o.customer_id"
+        " WHERE c.first_name = 'Alice' AND c.last_name = 'Johnson'",
+    ),
+    (
+        "How many different customers have placed at least one order?",
+        "SELECT COUNT(DISTINCT customer_id) FROM orders",
+    ),
+    (
+        "Which products are out of stock? Return their names.",
+        "SELECT product_name FROM products WHERE stock_quantity = 0",
+    ),
+    (
+        "List the names of products that have never been ordered.",
+        "SELECT product_name FROM products"
+        " WHERE product_id NOT IN (SELECT product_id FROM order_items)",
+    ),
+    (
+        "What is the average order total for each payment method? Return the method and the average.",
+        "SELECT payment_method, AVG(total_amount) FROM orders GROUP BY payment_method",
+    ),
+    (
+        "How many orders were shipped to the state CA?",
+        "SELECT COUNT(*) FROM orders WHERE shipping_state = 'CA'",
+    ),
+    (
+        "How many orders has Carol Williams placed?",
+        "SELECT COUNT(*) FROM orders o JOIN customers c ON c.customer_id = o.customer_id"
+        " WHERE c.first_name = 'Carol' AND c.last_name = 'Williams'",
+    ),
+    (
+        "How many products are no longer active?",
+        "SELECT COUNT(*) FROM products WHERE is_active = 0",
+    ),
 ]
 
 

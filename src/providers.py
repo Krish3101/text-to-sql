@@ -10,8 +10,7 @@ import re
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from src.prompt import get_sqlite_prompt
 
@@ -20,14 +19,8 @@ from src.prompt import get_sqlite_prompt
 class GenerationResult:
     sql: str
     raw_response: str
-    provider: str
-    model: str
-    latency_ms: float
     success: bool
     error: str | None = None
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class SQLExtractor:
@@ -37,9 +30,7 @@ class SQLExtractor:
 
     # Matches a bare statement when the model didn't use a fence: a leading keyword,
     # then everything up to a semicolon or the end of the reply.
-    RAW_SQL_PATTERN = re.compile(
-        r"(?is)\b([A-Z]+\s+[\s\S]+?)(?:;\s*$|;\s*\n|\Z)"
-    )
+    RAW_SQL_PATTERN = re.compile(r"(?is)\b([A-Z]+\s+[\s\S]+?)(?:;\s*$|;\s*\n|\Z)")
 
     @classmethod
     def clean_sql(cls, sql: str) -> str:
@@ -54,6 +45,7 @@ class SQLExtractor:
 
         try:
             import sqlglot
+
             transpiled = sqlglot.transpile(cleaned, read="sqlite", write="sqlite", pretty=True)
             if transpiled and len(transpiled) == 1:
                 return transpiled[0].strip()
@@ -94,7 +86,7 @@ class OpenRouterProvider:
         api_key: str | None = None,
         model: str = DEFAULT_MODEL,
         temperature: float = 0.0,
-        timeout: float = 60.0  # free models can take 15+ seconds
+        timeout: float = 60.0,  # free models can take 15+ seconds
     ):
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         self.model = model
@@ -104,25 +96,14 @@ class OpenRouterProvider:
     def is_available(self) -> bool:
         return bool(self.api_key and str(self.api_key).strip())
 
-    def _failed(self, start_time: float, error: str, raw_response: str = "") -> GenerationResult:
-        return GenerationResult(
-            sql="",
-            raw_response=raw_response,
-            provider="openrouter",
-            model=self.model,
-            latency_ms=(time.perf_counter() - start_time) * 1000.0,
-            success=False,
-            error=error,
-        )
+    def _failed(self, error: str, raw_response: str = "") -> GenerationResult:
+        return GenerationResult(sql="", raw_response=raw_response, success=False, error=error)
 
-    def generate_sql(self, prompt: str, schema_info: str = "", **kwargs) -> GenerationResult:
+    def generate_sql(self, prompt: str, schema_info: str = "") -> GenerationResult:
         """Ask the model for SQL. Network and API errors come back as a failed result,
         never as an exception, because the caller renders the error in the UI."""
-        start_time = time.perf_counter()
-
         if not self.is_available():
             return self._failed(
-                start_time,
                 "No OpenRouter API key. Add OPENROUTER_API_KEY to .env or enter one in the sidebar."
             )
 
@@ -131,7 +112,7 @@ class OpenRouterProvider:
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
             "temperature": self.temperature,
             "max_tokens": 1000,
@@ -162,17 +143,10 @@ class OpenRouterProvider:
                     if data.get("choices"):
                         raw_content = data["choices"][0]["message"].get("content", "")
 
-                    usage = data.get("usage", {})
                     return GenerationResult(
                         sql=SQLExtractor.extract_sql(raw_content),
                         raw_response=raw_content,
-                        provider="openrouter",
-                        model=self.model,
-                        latency_ms=(time.perf_counter() - start_time) * 1000.0,
                         success=True,
-                        prompt_tokens=usage.get("prompt_tokens"),
-                        completion_tokens=usage.get("completion_tokens"),
-                        metadata={"response_id": data.get("id")}
                     )
 
             except urllib.error.HTTPError as e:
@@ -184,8 +158,10 @@ class OpenRouterProvider:
                     err_body = e.read().decode("utf-8")
                 except Exception:
                     err_body = ""
-                return self._failed(start_time, f"OpenRouter returned HTTP {e.code}: {e.reason}. {err_body}", err_body)
+                return self._failed(
+                    f"OpenRouter returned HTTP {e.code}: {e.reason}. {err_body}", err_body
+                )
             except urllib.error.URLError as e:
-                return self._failed(start_time, f"Could not reach OpenRouter: {e.reason!s}")
+                return self._failed(f"Could not reach OpenRouter: {e.reason!s}")
             except Exception as e:
-                return self._failed(start_time, f"Unexpected error calling OpenRouter: {e!s}")
+                return self._failed(f"Unexpected error calling OpenRouter: {e!s}")

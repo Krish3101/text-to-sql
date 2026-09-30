@@ -35,13 +35,17 @@ def test_readonly_connection_blocks_writes(test_db):
     conn = get_readonly_connection(test_db)
     try:
         with pytest.raises(sqlite3.OperationalError):
-            conn.execute("INSERT INTO customers (first_name, last_name, email, city, state) VALUES ('Fail', 'User', 'fail@test.com', 'NYC', 'NY');")
+            conn.execute(
+                "INSERT INTO customers (first_name, last_name, email, city, state) VALUES ('Fail', 'User', 'fail@test.com', 'NYC', 'NY');"
+            )
     finally:
         conn.close()
 
 
 def test_execute_readonly_query(test_db):
-    cols, rows = execute_readonly_query("SELECT customer_id, first_name, email FROM customers LIMIT 5;", test_db)
+    cols, rows = execute_readonly_query(
+        "SELECT customer_id, first_name, email FROM customers LIMIT 5;", test_db
+    )
     assert len(cols) == 3
     assert "customer_id" in cols
     assert len(rows) == 5
@@ -52,7 +56,9 @@ def test_foreign_key_enforcement(test_db):
     try:
         # Inserting order with non-existent customer_id 9999 should violate foreign key constraint
         with pytest.raises(sqlite3.IntegrityError):
-            conn.execute("INSERT INTO orders (customer_id, status, total_amount) VALUES (9999, 'Pending', 50.0);")
+            conn.execute(
+                "INSERT INTO orders (customer_id, status, total_amount) VALUES (9999, 'Pending', 50.0);"
+            )
     finally:
         conn.close()
 
@@ -60,7 +66,9 @@ def test_foreign_key_enforcement(test_db):
 def test_reset_database(test_db):
     # Mutate DB
     conn = get_readwrite_connection(test_db)
-    conn.execute("INSERT INTO products (product_name, category, price, cost, stock_quantity, rating, is_active) VALUES ('Extra Product', 'Apparel', 19.99, 5.0, 10, 4.0, 1);")
+    conn.execute(
+        "INSERT INTO products (product_name, category, price, cost, stock_quantity, rating, is_active) VALUES ('Extra Product', 'Apparel', 19.99, 5.0, 10, 4.0, 1);"
+    )
     conn.commit()
     conn.close()
 

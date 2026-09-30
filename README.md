@@ -71,7 +71,8 @@ pytest tests/ -v
 ```
 
 Covers the guardrails (stacked queries, read/write classification, blocked commands), SQL
-extraction and cleaning, database seeding, and the write-approval path.
+extraction and cleaning, database seeding, the write-approval path, and sending a query that
+doesn't compile back to the model with SQLite's error.
 
 ```
 app.py              Streamlit entry point
