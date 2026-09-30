@@ -12,6 +12,9 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+import sqlglot
+from sqlglot.errors import SqlglotError
+
 from src.prompt import get_sqlite_prompt
 
 
@@ -44,12 +47,10 @@ class SQLExtractor:
         cleaned = re.sub(r";+\s*$", "", cleaned).strip()
 
         try:
-            import sqlglot
-
             transpiled = sqlglot.transpile(cleaned, read="sqlite", write="sqlite", pretty=True)
             if transpiled and len(transpiled) == 1:
                 return transpiled[0].strip()
-        except Exception:
+        except SqlglotError:
             # An unparseable string still goes to the guardrails, which reject it properly.
             pass
 
@@ -156,7 +157,7 @@ class OpenRouterProvider:
                     continue
                 try:
                     err_body = e.read().decode("utf-8")
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     err_body = ""
                 return self._failed(
                     f"OpenRouter returned HTTP {e.code}: {e.reason}. {err_body}", err_body

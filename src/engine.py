@@ -57,7 +57,7 @@ def validate_sqlite_syntax(sql: str, db_path: str) -> tuple[bool, str | None]:
         conn = get_readonly_connection(db_path)
         conn.execute(f"EXPLAIN QUERY PLAN {sql}")
         return True, None
-    except Exception as e:
+    except sqlite3.Error as e:
         return False, str(e)
     finally:
         if conn:
@@ -147,7 +147,7 @@ class TextToSQLEngine:
             cursor = conn.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             rows = cursor.fetchall()
-        except Exception as e:
+        except sqlite3.Error as e:
             return done(sql, error=f"SQLite error: {e}")
         finally:
             if conn:
@@ -179,7 +179,7 @@ class TextToSQLEngine:
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             rows = cursor.fetchall() if cursor.description else []
             return done(columns=columns, rows=rows, row_count=cursor.rowcount, wrote=True)
-        except Exception as e:
+        except sqlite3.Error as e:
             if conn:
                 conn.rollback()
             return done(error=f"SQLite error: {e}")

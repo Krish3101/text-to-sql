@@ -11,7 +11,7 @@ def _clear_input():
     st.session_state["last_query_result"] = None
 
 
-def render_live_query_tab(engine: TextToSQLEngine, db_path: str) -> None:
+def render_live_query_tab(engine: TextToSQLEngine) -> None:
     st.markdown("### Ask your database a question")
     st.caption(
         "Ask in plain English. Read queries execute immediately in read-only isolation; write operations require your approval."
@@ -134,8 +134,7 @@ def _display_query_result(result: QueryResult) -> None:
         st.info("No records returned.")
 
 
-def render_schema_explorer_tab(db_path: str) -> None:
-    """Renders interactive schema, ERD definitions, and table dictionaries."""
+def render_schema_explorer_tab() -> None:
     st.markdown("### Schema")
     st.caption(
         "Inspect the 4 relational tables, column data types, foreign keys, and key business calculations."

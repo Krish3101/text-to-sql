@@ -1,17 +1,12 @@
 import os
+import sqlite3
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
-# Attempt to load environment variables from .env if present
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
-
-from src.database import get_database_stats, init_db, reset_database
+from src.database import execute_readonly_query, get_database_stats, init_db, reset_database
 from src.engine import TextToSQLEngine
 from src.providers import OpenRouterProvider
 from src.ui import (
@@ -19,6 +14,8 @@ from src.ui import (
     render_live_query_tab,
     render_schema_explorer_tab,
 )
+
+load_dotenv()
 
 st.set_page_config(page_title="Text-to-SQL", layout="wide", initial_sidebar_state="expanded")
 
@@ -91,10 +88,6 @@ with st.sidebar:
             )
             if selected_table:
                 try:
-                    import pandas as pd
-
-                    from src.database import execute_readonly_query
-
                     cols, rows = execute_readonly_query(
                         f"SELECT * FROM `{selected_table}` LIMIT 10;", DB_PATH
                     )
@@ -103,7 +96,7 @@ with st.sidebar:
                         st.dataframe(df_preview, width="stretch", hide_index=True)
                     else:
                         st.info("Table is empty.")
-                except Exception as e:
+                except sqlite3.Error as e:
                     st.caption(f"Could not preview table: {e}")
 
 
@@ -125,10 +118,10 @@ st.markdown("<br>", unsafe_allow_html=True)
 tab_query, tab_schema, tab_arch = st.tabs(["Query", "Schema", "How it works"])
 
 with tab_query:
-    render_live_query_tab(engine=engine, db_path=DB_PATH)
+    render_live_query_tab(engine=engine)
 
 with tab_schema:
-    render_schema_explorer_tab(db_path=DB_PATH)
+    render_schema_explorer_tab()
 
 with tab_arch:
     render_architecture_tab()

@@ -11,7 +11,7 @@ import re
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, SqlglotError
 
 
 def _strip_markdown_and_formatting(sql: str) -> str:
@@ -44,7 +44,7 @@ def validate_sql_security(sql: str) -> tuple[bool, bool, str | None]:
         parsed_statements = sqlglot.parse(cleaned_sql, read="sqlite")
     except ParseError as e:
         return False, False, f"Failed to parse SQL AST: {e!s}"
-    except Exception as e:
+    except SqlglotError as e:
         return False, False, f"Unexpected SQL parse error: {e!s}"
 
     # Filter out empty statements
