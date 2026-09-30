@@ -1,5 +1,7 @@
 # Text-to-SQL
 
+[![tests](https://github.com/Krish3101/text-to-sql/actions/workflows/tests.yml/badge.svg)](https://github.com/Krish3101/text-to-sql/actions/workflows/tests.yml)
+
 Ask a question in plain English, get a SQLite query back, and run it against a sample
 e-commerce database. Every generated query is checked before it runs, and anything that
 writes to the database needs your approval first.
@@ -47,7 +49,7 @@ different. The check wants the same rows and columns as the reference, so those 
 wrong. The fourth came back with no SQL in the reply at all.
 
 ```bash
-python -m scripts.eval
+.venv/bin/python -m scripts.eval
 ```
 
 Each question is one request, and OpenRouter's free tier allows 50 a day.
@@ -67,7 +69,7 @@ before asking anything.
 `./scripts/reset.sh` removes the database, the virtualenv and the caches.
 
 ```bash
-pytest tests/ -v
+.venv/bin/pytest tests/ -v
 ```
 
 Covers the guardrails (stacked queries, read/write classification, blocked commands), SQL

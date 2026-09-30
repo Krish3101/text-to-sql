@@ -6,7 +6,7 @@ but extra or missing columns do.
 
 Run from the project root, with OPENROUTER_API_KEY in .env:
 
-    python -m scripts.eval
+    .venv/bin/python -m scripts.eval
 
 Each question is one request, and OpenRouter's free tier allows 50 a day.
 """
