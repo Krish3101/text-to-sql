@@ -171,7 +171,7 @@ def render_schema_explorer_tab(db_path: str) -> None:
     for rel in relationships:
         st.markdown(
             f"• **{rel['from_table']}** (`{rel['from_column']}`) → **{rel['to_table']}** (`{rel['to_column']}`) "
-            f"— *[{rel['type']}]*: {rel['description']}"
+            f"- *[{rel['type']}]*: {rel['description']}"
         )
 
 

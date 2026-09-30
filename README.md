@@ -19,16 +19,16 @@ tree rather than from its text:
 | what comes back | what happens |
 |---|---|
 | `SELECT * FROM orders` | runs, on a read-only connection |
-| `SELECT 1; DROP TABLE orders;` | rejected — multiple statements |
-| `ATTACH DATABASE '/tmp/x' AS x` | rejected — so is `DETACH`, so is `PRAGMA writable_schema` |
+| `SELECT 1; DROP TABLE orders;` | rejected: multiple statements |
+| `ATTACH DATABASE '/tmp/x' AS x` | rejected, and so are `DETACH` and `PRAGMA writable_schema` |
 | `UPDATE products SET price = 0` | shown to you first, runs only if you approve |
-| `DROP TABLE customers` | same — DDL is a write like any other |
+| `DROP TABLE customers` | same, since DDL is a write like any other |
 
 Reads run on a connection opened read-only, so a `SELECT` cannot write even if it somehow
 tried to.
 
 I parse the query instead of scanning it for banned keywords because keyword lists are easy
-to slip past — a comment, odd whitespace, or unusual casing defeats them — and sqlglot
+to slip past (a comment, odd whitespace, or unusual casing defeats them), and sqlglot
 already knows what a statement actually is.
 
 ## The database
@@ -95,7 +95,7 @@ tests/
 
 ## Limitations
 
-The schema is fixed — it only queries the bundled e-commerce database, not one you point it
+The schema is fixed: it only queries the bundled e-commerce database, not one you point it
 at. Each question is independent, so you can't ask a follow-up that refers back to the
 previous answer.
 
