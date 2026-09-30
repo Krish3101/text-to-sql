@@ -61,3 +61,52 @@ def test_approved_query_revalidates_before_writing(tmp_path):
     assert result.is_safe is False
     assert result.guardrail_error is not None
     assert "attach" in result.guardrail_error.lower()
+
+
+class ScriptedProvider:
+    """Stands in for OpenRouter and replies with the given SQL, in order."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+        self.prompts = []
+
+    def is_available(self):
+        return True
+
+    def generate_sql(self, prompt, schema_info=""):
+        from src.providers import GenerationResult
+
+        self.prompts.append(prompt)
+        sql = self.replies.pop(0)
+        return GenerationResult(
+            sql=sql, raw_response=sql, provider="test", model="test", latency_ms=0.0, success=True
+        )
+
+
+def test_query_that_fails_to_compile_is_sent_back_with_the_error(tmp_path):
+    db_file = str(tmp_path / "retry.db")
+    init_db(db_file)
+    engine = TextToSQLEngine(db_path=db_file)
+    provider = ScriptedProvider(
+        "SELECT nme FROM customers LIMIT 1",
+        "SELECT first_name FROM customers LIMIT 1",
+    )
+    engine.primary_provider = provider
+
+    result = engine.execute_query("What is the first customer's name?")
+
+    assert result.error is None
+    assert len(result.rows) == 1
+    assert len(provider.prompts) == 2
+    assert "no such column: nme" in provider.prompts[1]
+
+
+def test_approved_write_is_marked_as_a_write(tmp_path):
+    db_file = str(tmp_path / "write.db")
+    init_db(db_file)
+    engine = TextToSQLEngine(db_path=db_file)
+
+    result = engine.execute_approved_query("UPDATE products SET price = price WHERE product_id = 1")
+
+    assert result.error is None
+    assert result.wrote is True

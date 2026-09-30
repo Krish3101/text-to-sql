@@ -1,6 +1,5 @@
 """Ties the pieces together: ask the model for SQL, check it, run it, return the rows."""
 
-import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -21,6 +20,7 @@ from src.guardrails import (
     validate_sql_security,
 )
 from src.providers import (
+    GenerationResult,
     OpenRouterProvider,
     SQLExtractor,
 )
@@ -41,6 +41,7 @@ class QueryResult:
     error: str | None = None
     row_count: int = 0
     needs_approval: bool = False
+    wrote: bool = False  # an approved write that ran
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -76,10 +77,6 @@ def validate_sqlite_syntax(sql: str, db_path: str = "ecommerce.db") -> tuple[boo
     """
     if not sql or not sql.strip():
         return False, "Empty SQL query."
-
-    # Must start with SELECT or WITH
-    if not re.match(r"(?i)^\s*(SELECT|WITH)\b", sql.strip()):
-        return False, "Query must begin with SELECT or WITH."
 
     try:
         resolved = get_resolved_db_path(db_path)
@@ -136,40 +133,43 @@ class TextToSQLEngine:
             model=self.model or OpenRouterProvider.DEFAULT_MODEL
         )
 
-    def generate_sql(self, natural_query: str) -> str:
-        """
-        Generates clean, sanitized SQL for a natural language question.
-        Applies self-correction retry loop if syntax validation fails.
-        """
+    def generate_sql(self, natural_query: str) -> GenerationResult:
+        """Ask the model for SQL. If a read query doesn't compile, send it back with
+        SQLite's error attached and ask again, up to max_retries times."""
         result = self.primary_provider.generate_sql(natural_query, schema_info=self.schema_info)
-        sql = SQLExtractor.clean_sql(result.sql)
 
-        # If provider is available and syntax is invalid, attempt self-correction
-        if self.primary_provider.is_available() and sql:
+        for _ in range(self.max_retries):
+            sql = SQLExtractor.clean_sql(result.sql)
+            if not result.success or not sql:
+                break
+            # Writes and rejected queries aren't retried: they go to approval or get
+            # blocked, and either way the user sees them.
+            is_safe, needs_approval, _ = validate_sql_security(sql)
+            if not is_safe or needs_approval:
+                break
             is_valid, err_msg = validate_sqlite_syntax(sql, self.db_path)
-            retries = 0
-            while not is_valid and retries < self.max_retries:
-                retries += 1
-                correction_prompt = (
-                    f"Your previous SQLite query:\n```sql\n{sql}\n```\n"
-                    f"failed with SQLite syntax error: {err_msg}\n"
-                    f"Original Question: {natural_query}\n"
-                    f"Please correct the query using the exact schema columns provided. Return ONLY the corrected SQL in ```sql ... ```."
-                )
-                retry_res = self.primary_provider.generate_sql(correction_prompt, schema_info=self.schema_info)
-                if retry_res.success and retry_res.sql:
-                    sql = SQLExtractor.clean_sql(retry_res.sql)
-                    is_valid, err_msg = validate_sqlite_syntax(sql, self.db_path)
-                else:
-                    break
+            if is_valid:
+                break
 
-        return sql
+            correction_prompt = (
+                f"Your previous SQLite query:\n```sql\n{sql}\n```\n"
+                f"failed with this SQLite error: {err_msg}\n"
+                f"Original question: {natural_query}\n"
+                "Correct the query using the exact schema columns provided. "
+                "Return ONLY the corrected SQL in ```sql ... ```."
+            )
+            retry = self.primary_provider.generate_sql(correction_prompt, schema_info=self.schema_info)
+            if not retry.success or not retry.sql:
+                break
+            result = retry
+
+        return result
 
     def execute_query(self, natural_query: str) -> QueryResult:
         """Generate the SQL, check it, and run it read-only."""
         start_time = time.perf_counter()
 
-        gen_result = self.primary_provider.generate_sql(natural_query, schema_info=self.schema_info)
+        gen_result = self.generate_sql(natural_query)
         sql = SQLExtractor.clean_sql(gen_result.sql)
 
         if not gen_result.success or not sql:
@@ -399,6 +399,7 @@ class TextToSQLEngine:
                 provider_used="manual",
                 error=None,
                 needs_approval=False,
+                wrote=True,
                 row_count=rowcount
             )
         except Exception as e:

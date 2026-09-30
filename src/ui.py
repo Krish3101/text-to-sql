@@ -65,8 +65,15 @@ def _display_query_result(result: QueryResult) -> None:
     with m_col2:
         st.caption(f"{result.execution_time_ms:.1f} ms")
     with m_col3:
-        status_badge = "read-only" if result.is_safe else "flagged"
-        st.caption(f"Status: **{status_badge}**")
+        if not result.is_safe:
+            status = "blocked"
+        elif result.needs_approval:
+            status = "write, needs approval"
+        elif result.wrote:
+            status = "write, approved"
+        else:
+            status = "read-only"
+        st.caption(f"Status: **{status}**")
 
     st.code(result.generated_sql or "-- no SQL generated", language="sql")
 
