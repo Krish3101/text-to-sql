@@ -86,8 +86,8 @@ class OpenRouterProvider:
     """OpenRouter chat completions over urllib, so there's no HTTP dependency to install."""
 
     ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-    # Free on OpenRouter and good at SQL. If OpenRouter retires it, this is the one line to change.
-    DEFAULT_MODEL = "qwen/qwen3.8-27b:free"
+    # Free on OpenRouter. If OpenRouter retires it, this is the one line to change.
+    DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
     def __init__(
         self,
