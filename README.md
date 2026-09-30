@@ -9,6 +9,8 @@ writes to the database needs your approval first.
 Built with Streamlit. The SQL comes from `nvidia/nemotron-3-super-120b-a12b:free` through
 OpenRouter, which is free, so a free OpenRouter key is all it needs.
 
+**Stack:** Python, Streamlit, sqlglot, SQLite, pandas, OpenRouter.
+
 ![A question, the SQL generated for it, and the result](docs/query.png)
 
 ## The model writes the SQL. It doesn't decide whether the SQL runs.
