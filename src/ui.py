@@ -96,7 +96,7 @@ def _display_query_result(result: QueryResult) -> None:
         if engine is not None and not engine.provider.is_available():
             st.warning(result.error)
         else:
-            st.error(f"Execution error: {result.error}")
+            st.error(result.error)
         return
 
     if result.needs_approval:
