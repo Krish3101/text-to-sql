@@ -114,7 +114,7 @@ class TextToSQLEngine:
         self.db_path = db_path
         self.provider_type = provider.lower() if provider else "openrouter"
         self.api_key = api_key
-        self.model = model or "meta-llama/llama-3.1-70b-instruct"
+        self.model = model or OpenRouterProvider.DEFAULT_MODEL
         self.max_retries = max_retries
         self.schema_info = get_schema_prompt_text()
 
@@ -133,7 +133,7 @@ class TextToSQLEngine:
 
         self.primary_provider = OpenRouterProvider(
             api_key=self.api_key,
-            model=self.model or "meta-llama/llama-3.1-70b-instruct"
+            model=self.model or OpenRouterProvider.DEFAULT_MODEL
         )
 
     def generate_sql(self, natural_query: str) -> str:

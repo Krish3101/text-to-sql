@@ -86,14 +86,15 @@ class OpenRouterProvider:
     """OpenRouter chat completions over urllib, so there's no HTTP dependency to install."""
 
     ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-    DEFAULT_MODEL = "meta-llama/llama-3.1-70b-instruct"
+    # Free on OpenRouter and good at SQL. If OpenRouter retires it, this is the one line to change.
+    DEFAULT_MODEL = "qwen/qwen3.8-27b:free"
 
     def __init__(
         self,
         api_key: str | None = None,
         model: str = DEFAULT_MODEL,
         temperature: float = 0.0,
-        timeout: float = 20.0
+        timeout: float = 60.0  # free models can take 15+ seconds
     ):
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         self.model = model
@@ -134,6 +135,8 @@ class OpenRouterProvider:
             ],
             "temperature": self.temperature,
             "max_tokens": 1000,
+            # Thinking is slow and can use up max_tokens before any SQL is written.
+            "reasoning": {"enabled": False},
         }
 
         headers = {
@@ -150,34 +153,39 @@ class OpenRouterProvider:
             method="POST",
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-
-                raw_content = ""
-                if data.get("choices"):
-                    raw_content = data["choices"][0]["message"].get("content", "")
-
-                usage = data.get("usage", {})
-                return GenerationResult(
-                    sql=SQLExtractor.extract_sql(raw_content),
-                    raw_response=raw_content,
-                    provider="openrouter",
-                    model=self.model,
-                    latency_ms=(time.perf_counter() - start_time) * 1000.0,
-                    success=True,
-                    prompt_tokens=usage.get("prompt_tokens"),
-                    completion_tokens=usage.get("completion_tokens"),
-                    metadata={"response_id": data.get("id")}
-                )
-
-        except urllib.error.HTTPError as e:
+        for attempt in range(3):
             try:
-                err_body = e.read().decode("utf-8")
-            except Exception:
-                err_body = ""
-            return self._failed(start_time, f"OpenRouter returned HTTP {e.code}: {e.reason}. {err_body}", err_body)
-        except urllib.error.URLError as e:
-            return self._failed(start_time, f"Could not reach OpenRouter: {e.reason!s}")
-        except Exception as e:
-            return self._failed(start_time, f"Unexpected error calling OpenRouter: {e!s}")
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+
+                    raw_content = ""
+                    if data.get("choices"):
+                        raw_content = data["choices"][0]["message"].get("content", "")
+
+                    usage = data.get("usage", {})
+                    return GenerationResult(
+                        sql=SQLExtractor.extract_sql(raw_content),
+                        raw_response=raw_content,
+                        provider="openrouter",
+                        model=self.model,
+                        latency_ms=(time.perf_counter() - start_time) * 1000.0,
+                        success=True,
+                        prompt_tokens=usage.get("prompt_tokens"),
+                        completion_tokens=usage.get("completion_tokens"),
+                        metadata={"response_id": data.get("id")}
+                    )
+
+            except urllib.error.HTTPError as e:
+                # Free models share a pool that OpenRouter throttles for a few seconds at a time.
+                if e.code == 429 and attempt < 2:
+                    time.sleep(5 * (attempt + 1))
+                    continue
+                try:
+                    err_body = e.read().decode("utf-8")
+                except Exception:
+                    err_body = ""
+                return self._failed(start_time, f"OpenRouter returned HTTP {e.code}: {e.reason}. {err_body}", err_body)
+            except urllib.error.URLError as e:
+                return self._failed(start_time, f"Could not reach OpenRouter: {e.reason!s}")
+            except Exception as e:
+                return self._failed(start_time, f"Unexpected error calling OpenRouter: {e!s}")

@@ -12,6 +12,7 @@ except ImportError:
 
 from src.database import get_database_stats, init_db, reset_database
 from src.engine import TextToSQLEngine
+from src.providers import OpenRouterProvider
 from src.ui import (
     render_architecture_tab,
     render_live_query_tab,
@@ -78,26 +79,7 @@ with st.sidebar:
     st.markdown("## Configuration")
 
     st.markdown("### Model")
-
-    MODEL_OPTIONS = [
-        "meta-llama/llama-3.1-70b-instruct",
-        "meta-llama/llama-3.3-70b-instruct",
-        "qwen/qwen-2.5-coder-32b-instruct",
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "Custom Model..."
-    ]
-
-    selected_option = st.selectbox(
-        "OpenRouter Model:",
-        options=MODEL_OPTIONS,
-        index=0,
-        help="Select a high-accuracy LLM for natural language to SQL generation"
-    )
-
-    if selected_option == "Custom Model...":
-        selected_model = st.text_input("Enter model identifier:", value="meta-llama/llama-3.1-70b-instruct").strip()
-    else:
-        selected_model = selected_option
+    st.caption(f"`{OpenRouterProvider.DEFAULT_MODEL}` (free on OpenRouter)")
 
     env_key = os.environ.get("OPENROUTER_API_KEY", "")
     sidebar_key = st.text_input(
@@ -153,12 +135,11 @@ if "sql_engine" not in st.session_state:
         db_path=DB_PATH,
         provider=provider_key,
         api_key=api_key,
-        model=selected_model
     )
 else:
     engine = st.session_state["sql_engine"]
-    if engine.provider_type != provider_key or engine.api_key != api_key or engine.model != selected_model:
-        engine.set_provider(provider_type=provider_key, api_key=api_key, model=selected_model)
+    if engine.provider_type != provider_key or engine.api_key != api_key:
+        engine.set_provider(provider_type=provider_key, api_key=api_key)
 
 engine = st.session_state["sql_engine"]
 
