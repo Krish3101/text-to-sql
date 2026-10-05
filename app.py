@@ -1,127 +1,83 @@
-import os
-import sqlite3
-from pathlib import Path
+"""Streamlit application entry point for Text-to-SQL."""
 
-import pandas as pd
+import os
+
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.database import execute_readonly_query, get_database_stats, init_db, reset_database
-from src.engine import TextToSQLEngine
-from src.providers import OpenRouterProvider
-from src.ui import (
-    render_architecture_tab,
-    render_live_query_tab,
-    render_schema_explorer_tab,
-)
+from text_to_sql.config import DEFAULT_DB_PATH, DEFAULT_MODEL
+from text_to_sql.database import init_db
+from text_to_sql.engine import TextToSQLEngine
+from text_to_sql.llm import OpenRouterProvider
+from ui import render_live_query_tab, render_schema_explorer_tab
 
 load_dotenv()
 
-st.set_page_config(page_title="Text-to-SQL", layout="wide", initial_sidebar_state="expanded")
-
-CUSTOM_CSS = """
-<style>
-    /* Code Blocks */
-    .stCodeBlock {
-        border-radius: 8px !important;
-    }
-
-    /* Sidebar Section Divider */
-    .sidebar-section {
-        margin-top: 15px;
-        margin-bottom: 15px;
-        border-top: 1px solid #334155;
-    }
-</style>
-"""
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+st.set_page_config(
+    page_title="Text-to-SQL",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
 
-DB_PATH = "ecommerce.db"
+@st.cache_resource
+def ensure_database() -> None:
+    # Builds the DB if it is missing or was built from an older seed (user_version check).
+    init_db(DEFAULT_DB_PATH)
 
-# Ensure database exists and is seeded with deterministic mock records
-if not Path(DB_PATH).exists():
-    init_db(DB_PATH)
 
+ensure_database()
 
-with st.sidebar:
-    st.markdown("## Configuration")
+# Retrieve API key without leaking it to browser UI
+env_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+session_key = st.session_state.get("user_api_key", "").strip()
+active_key = session_key or env_key
 
-    st.markdown("### Model")
-    st.caption(f"`{OpenRouterProvider.DEFAULT_MODEL}` (free on OpenRouter)")
+# Page Title & Subtitle
+st.title("Text-to-SQL")
+st.write(
+    "Ask a question in English. Only read-only SELECT queries run; anything that changes data is rejected."
+)
 
-    env_key = os.environ.get("OPENROUTER_API_KEY", "")
-    sidebar_key = st.text_input(
+# If no API key is available, render inline setup banner
+if not active_key:
+    st.info("Add a free OpenRouter key to generate SQL. You can still test the guardrail below.")
+    inline_key = st.text_input(
         "OpenRouter API Key:",
-        value=env_key,
         type="password",
         placeholder="Enter your sk-or-v1-... key",
-        help="OpenRouter API key used for live generation. Reads from .env by default.",
+        help="Used to call the free model. Keys are never saved or committed.",
+        key="inline_api_key_input",
     )
-    api_key = sidebar_key.strip() if sidebar_key else env_key
+    if inline_key.strip():
+        st.session_state["user_api_key"] = inline_key.strip()
+        st.rerun()
+else:
+    col_info, col_ovr = st.columns([5, 3])
+    with col_info:
+        model_msg = f"Model: `{DEFAULT_MODEL}`"
+        source_msg = (
+            " (using key from `.env`)" if not session_key and env_key else " (session key active)"
+        )
+        st.caption(f"{model_msg}{source_msg}")
+    with col_ovr:
+        with st.expander("Change API key", expanded=False):
+            new_key = st.text_input("Override API Key:", type="password", key="override_key_input")
+            if st.button("Apply Key"):
+                st.session_state["user_api_key"] = new_key.strip()
+                st.rerun()
 
-    st.markdown('<div class="sidebar-section"></div>', unsafe_allow_html=True)
-
-    st.markdown("### Database")
-    st.caption(f"`{DB_PATH}`")
-
-    stats = get_database_stats(DB_PATH)
-
-    for tbl_name, count in stats.items():
-        st.text(f"• {tbl_name.capitalize()}: {count} rows")
-
-    if st.button(
-        "Reset database",
-        width="stretch",
-        help="Drops any writes you approved and re-seeds from scratch",
-    ):
-        with st.spinner("Resetting and re-seeding database..."):
-            reset_database(DB_PATH)
-            st.session_state["last_query_result"] = None
-            st.success("Database re-seeded.")
-            st.rerun()
-
-    if stats:
-        with st.expander("Browse tables", expanded=False):
-            selected_table = st.selectbox(
-                "Select table to preview:", options=list(stats.keys()), key="sidebar_table_inspect"
-            )
-            if selected_table:
-                try:
-                    cols, rows = execute_readonly_query(
-                        f"SELECT * FROM `{selected_table}` LIMIT 10;", DB_PATH
-                    )
-                    if rows:
-                        df_preview = pd.DataFrame(rows, columns=cols)
-                        st.dataframe(df_preview, width="stretch", hide_index=True)
-                    else:
-                        st.info("Table is empty.")
-                except sqlite3.Error as e:
-                    st.caption(f"Could not preview table: {e}")
-
-
-# One engine per browser session. A new key typed into the sidebar replaces its provider.
+# Engine instance per browser session
 if "sql_engine" not in st.session_state:
-    st.session_state["sql_engine"] = TextToSQLEngine(db_path=DB_PATH, api_key=api_key)
+    st.session_state["sql_engine"] = TextToSQLEngine(db_path=DEFAULT_DB_PATH, api_key=active_key)
 engine = st.session_state["sql_engine"]
-if engine.provider.api_key != api_key:
-    engine.provider = OpenRouterProvider(api_key=api_key)
+if engine.provider.api_key != active_key:
+    engine.provider = OpenRouterProvider(api_key=active_key)
 
-
-st.markdown("# Text-to-SQL")
-st.markdown(
-    "Ask a question in plain English and get a SQLite query back. Every query is checked "
-    "before it runs, and anything that writes needs your approval first."
-)
-st.markdown("<br>", unsafe_allow_html=True)
-
-tab_query, tab_schema, tab_arch = st.tabs(["Query", "Schema", "How it works"])
+tab_query, tab_schema = st.tabs(["Query", "Schema"])
 
 with tab_query:
-    render_live_query_tab(engine=engine)
+    render_live_query_tab(engine=engine, has_key=engine.provider.is_available())
 
 with tab_schema:
-    render_schema_explorer_tab()
-
-with tab_arch:
-    render_architecture_tab()
+    render_schema_explorer_tab(db_path=DEFAULT_DB_PATH)
