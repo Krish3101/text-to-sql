@@ -1,13 +1,9 @@
 # Text-to-SQL
 
-[![tests](https://github.com/Krish3101/text-to-sql/actions/workflows/tests.yml/badge.svg)](https://github.com/Krish3101/text-to-sql/actions/workflows/tests.yml)
-
 Ask a question in English, get SQLite over a known schema. The model writes the SQL; an AST
 allowlist and SQLite's own authorizer decide whether it runs.
 
 ![Check my own SQL rejecting DROP TABLE customers: nothing was executed](docs/query.png)
-
-Built as a college project (Topic 182: Text-to-SQL Generator).
 
 **Stack:** Python, Streamlit, sqlglot, SQLite, pandas, uv, OpenRouter.
 
