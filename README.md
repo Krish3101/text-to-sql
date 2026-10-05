@@ -2,104 +2,173 @@
 
 [![tests](https://github.com/Krish3101/text-to-sql/actions/workflows/tests.yml/badge.svg)](https://github.com/Krish3101/text-to-sql/actions/workflows/tests.yml)
 
-Ask a question in plain English, get a SQLite query back, and run it against a sample
-e-commerce database. Every generated query is checked before it runs, and anything that
-writes to the database needs your approval first.
+Ask a question in English, get SQLite over a known schema. The model writes the SQL; an AST
+allowlist and SQLite's own authorizer decide whether it runs.
 
-Built with Streamlit. The SQL comes from `nvidia/nemotron-3-super-120b-a12b:free` through
-OpenRouter, which is free, so a free OpenRouter key is all it needs.
+![Check my own SQL rejecting DROP TABLE customers: nothing was executed](docs/query.png)
 
-**Stack:** Python, Streamlit, sqlglot, SQLite, pandas, OpenRouter.
+Built as a college project (Topic 182: Text-to-SQL Generator).
 
-![A question, the SQL generated for it, and the result](docs/query.png)
+**Stack:** Python, Streamlit, sqlglot, SQLite, pandas, uv, OpenRouter.
 
-## The model writes the SQL. It doesn't decide whether the SQL runs.
+## How it works
 
-Each generated query is parsed with sqlglot before execution, and judged from the parse
-tree rather than from its text:
+1. **The schema prompt is generated.** At startup the app reads the `CREATE TABLE` text for the
+   four tables straight from `sqlite_master`. Column meanings are `-- comments` inside
+   `schema.sql`, and SQLite keeps them in that text. Below it goes a short **data notes** block,
+   also generated: the values of each TEXT column with 10 or fewer distinct values (categories,
+   order statuses, payment methods, segments) and the first and last value of each date column.
+   The model sees the schema and these notes, never rows.
+2. **A fixed "today".** Orders stop in February 2026, so the prompt says today is
+   `AS_OF_DATE` (2026-02-28) and forbids `date('now')`. Otherwise "orders in the last 30 days"
+   would return nothing.
+3. **One model** (`nvidia/nemotron-3-super-120b-a12b:free`) through OpenRouter. A free key is
+   enough. If SQLite can't compile the reply, the error goes back to the model, so a question uses
+   at most 3 calls. A refusal or a rejected destructive query is never retried.
+4. If the request asks to change data, the model is told to reply exactly `-- REFUSE: read-only`.
+   That counts only when it is the whole reply.
 
-| what comes back | what happens |
+## How destructive queries are stopped (three layers)
+
+The model is not trusted. Its SQL has to pass three independent layers.
+
+1. **AST allowlist** (`guardrails.py`). sqlglot parses the SQL.
+   - Exactly one statement, and its root must be `SELECT`, `UNION`, `INTERSECT` or `EXCEPT`.
+   - The whole tree is walked: any `INSERT`/`UPDATE`/`DELETE` (also inside a CTE), DDL,
+     `PRAGMA`, `ATTACH`, `VACUUM`, transaction commands or `SELECT … INTO` is rejected.
+   - Only the four known tables and CTE names defined in that part of the query. No
+     `sqlite_master`, no other database prefix, no table-valued functions such as `json_each`.
+   - Only allowlisted functions, so `load_extension`, `readfile` and `randomblob` are out.
+   - The table list comes from `schema.sql`, and the function list is shared with layer 2.
+2. **SQLite authorizer and limits** (`executor.py`). SQLite checks every step itself:
+   - the authorizer allows only `SELECT`, reads of the four tables and the same function
+     allowlist, and denies everything else (writes, DDL, `PRAGMA`, `ATTACH`, SQLite's own
+     tables, table-valued functions such as `json_each`);
+   - `setlimit`: no attached databases, 1 MB per value, 20 KB of SQL;
+   - a 3 s wall-clock deadline and a 1,000-row cap.
+3. **A read-only file.** The connection is opened with `mode=ro` and `query_only`.
+
+**Why not a regex?** Comments, casing and string literals beat a keyword list.
+`SELECT ';DROP TABLE x'` is safe, while `SELECT 1; -- x` followed by `DROP …` on the next line is
+not. Parsing sees the difference.
+
+**Why not trust sqlglot alone?** Parsers disagree. sqlglot reads `REINDEX` as a column name and
+`SAVEPOINT a` as an alias. The root allowlist catches those, and the authorizer works on SQLite's
+own parse, so a parser mistake can't get a write through. sqlglot is pinned in `uv.lock`, and the
+attack corpus runs in CI as the guard when it is upgraded.
+
+| What comes back | What happens |
 |---|---|
 | `SELECT * FROM orders` | runs, on a read-only connection |
 | `SELECT 1; DROP TABLE orders;` | rejected: multiple statements |
-| `ATTACH DATABASE '/tmp/x' AS x` | rejected, and so are `DETACH` and `PRAGMA writable_schema` |
-| `UPDATE products SET price = 0` | shown to you first, runs only if you approve |
-| `DROP TABLE customers` | same, since DDL is a write like any other |
+| `ATTACH DATABASE '/tmp/x' AS x` | rejected by the AST allowlist and the authorizer; no file is created |
+| `VACUUM INTO '/tmp/x.db'` | rejected by the AST allowlist and the authorizer; no file is created |
+| `PRAGMA query_only = OFF` | rejected: only SELECT queries run |
+| `UPDATE products SET price = 0` | rejected: only SELECT queries run |
+| `DROP TABLE customers` | rejected: only SELECT queries run |
+| `WITH d AS (DELETE FROM orders RETURNING *) SELECT * FROM d` | rejected: DML inside a CTE |
+| `WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM r) SELECT count(*) FROM r` | allowed, then stopped by the 3 s deadline |
 
-Reads run on a connection opened read-only, so a `SELECT` cannot write even if it somehow
-tried to.
+`tests/attacks.yaml` holds **64 attack and edge cases** (46 must be rejected, 18 must pass).
+`test_db_layer_blocks_without_guardrail` sends 11 attacks straight to the SQLite
+connection with the AST layer skipped, and checks that each one fails, creates no file and leaves
+the data unchanged. That proves layer 2 on its own.
 
-I parse the query instead of scanning it for banned keywords because keyword lists are easy
-to slip past (a comment, odd whitespace, or unusual casing defeats them), and sqlglot
-already knows what a statement actually is.
+## Where it fails on joins
 
-## The database
+The eval has 20 questions and only about 4 of them need a join, so **the join failure rate is not
+measured yet**. What I can show is where joins go wrong on this data. These numbers come from
+`tests/test_seed.py`, with no model involved:
 
-A sample e-commerce SQLite database, seeded identically every run: customers (30),
-products (25), orders (75), order_items (180). Because the seed is deterministic, the same
-question gives the same answer on a fresh clone, which is what makes the tests meaningful.
+- **Fan-out.** Joining `orders` to `order_items` repeats each order once per line item. Summing
+  `orders.total_amount` after that join gives **130,306.64** instead of **50,131.26**.
+- **INNER vs LEFT.** 3 of the 30 customers have no orders. An inner join drops them; a LEFT join
+  keeps them. "Customers who never ordered" needs the LEFT join (or `NOT EXISTS`).
+- **Relative dates.** "Last month" depends on today's date. This is handled by `AS_OF_DATE`.
+
+On the 2026-09-30 run the misses were: two answers with an extra column, one customer total
+summed from line items that came out one cent off (the old prompt wrongly said order totals equal
+the sum of line items; the prompt now says to use `orders.total_amount`), and one empty reply.
+
+Next step: a 40-question eval made of joins, tagged by join type.
 
 ## How often it's right
 
-`scripts/eval.py` asks 20 questions about the sample database, each with a reference query I
-wrote by hand, and counts an answer correct when it returns the same rows.
+`scripts/eval.py` asks 20 questions about the sample database, each with a hand-written reference
+query, and counts an answer correct when it returns the same rows.
 
-On the last full run (30 Sept 2026) it got **16 of 20**. Three of the misses were the right
-answer in a different shape: two added a column nobody asked for, and one worked out a
-customer's total from the order items instead of the order totals and came out a cent
-different. The check wants the same rows and columns as the reference, so those count as
-wrong. The fourth came back with no SQL in the reply at all.
+**16 of 20**, measured 2026-09-30 on an earlier prompt that contained two hints since removed.
+The current prompt has not been scored yet.
 
 ```bash
-.venv/bin/python -m scripts.eval
+uv run python -m scripts.eval
 ```
 
-Each question is one request, and OpenRouter's free tier allows 50 a day.
+It needs `OPENROUTER_API_KEY` in `.env`. It exits with code 2 if there is no key and code 3 if
+OpenRouter keeps answering 429 (the free tier allows 50 requests a day).
+
+## The database
+
+A small shop database built from `src/text_to_sql/data/schema.sql` and `seed.sql`:
+customers (30), products (25), orders (75), order_items (180). The app rebuilds it when the file
+is missing or was built from an older seed (`PRAGMA user_version`).
 
 ## Running it
 
-Needs Python 3.11+ and an OpenRouter API key.
+Needs Python 3.11+ and uv.
 
 ```bash
-./scripts/start.sh
+./scripts/start.sh             # http://localhost:8501
+PORT=8503 ./scripts/start.sh   # another port
 ```
 
-That creates the virtualenv, installs dependencies, copies `.env.example` to `.env` if it's
-missing, and opens the app at http://localhost:8501. Add your `OPENROUTER_API_KEY` to `.env`
-before asking anything.
+It creates `.env` from `.env.example` if it is missing, runs `uv sync --locked` and starts
+Streamlit. Without a key you can still use **Check my own SQL**, which runs the AST check on SQL
+you type.
 
-`./scripts/reset.sh` removes the database, the virtualenv and the caches.
+## Tests
 
 ```bash
-.venv/bin/pytest tests/ -v
+uv run pytest -q
 ```
 
-Covers the guardrails (stacked queries, read/write classification, blocked commands), SQL
-extraction and cleaning, database seeding, the write-approval path, and sending a query that
-doesn't compile back to the model with SQLite's error.
+152 tests:
+
+| File | Tests | What |
+|---|---|---|
+| `test_guardrails.py` | 84 | the AST allowlist, including the 64 cases in `attacks.yaml` |
+| `test_executor.py` | 16 | layer 2 with the guardrail skipped, the row cap and the deadline |
+| `test_extract.py` | 12 | pulling SQL out of replies, refusal detection |
+| `test_llm.py` | 14 | OpenRouter errors with a fake `urlopen`, eval exit codes |
+| `test_prompt.py` | 12 | the prompt schema equals `sqlite_master`, data notes, no answer hints |
+| `test_engine.py` | 7 | retries, refusals, timeouts |
+| `test_seed.py` | 7 | seed fingerprint and the join numbers above |
 
 ```
-app.py              Streamlit entry point
-src/
-  prompt.py         builds the prompt with schema and examples
-  providers.py      OpenRouter call
-  engine.py         ties generation, checking and execution together
-  guardrails.py     sqlglot parsing, read vs write classification
-  database.py       schema, seeding, connections
-  schema.py         schema introspection for the prompt
-  ui.py             Streamlit tabs
+app.py                  Streamlit entry point
+ui.py                   Query and Schema tabs
+src/text_to_sql/
+  config.py             constants
+  llm.py                OpenRouter client
+  extract.py            pulls the SQL out of a reply
+  prompt.py             system prompt and few-shot examples
+  schema.py             schema prompt and Schema tab, read from the database
+  guardrails.py         layer 1: AST allowlist
+  executor.py           layer 2: read-only connection with the authorizer
+  database.py           builds the database from schema.sql and seed.sql
+  engine.py             question -> SQL -> check -> run
+  data/schema.sql       tables, with column comments
+  data/seed.sql         sample data
 scripts/
-  start.sh          venv, deps, run
-  reset.sh          drop the database and caches
-  eval.py           the 20-question accuracy check
-tests/
+  start.sh              run the app
+  eval.py               20-question accuracy check
 ```
 
 ## Limitations
 
-The schema is fixed: it only queries the bundled e-commerce database, not one you point it
-at. Each question is independent, so you can't ask a follow-up that refers back to the
-previous answer.
+- The schema is fixed: it only queries the bundled shop database.
+- One model, through OpenRouter's free tier.
+- Each question stands alone; follow-up questions about an earlier answer are not supported.
 
 ## License
 
