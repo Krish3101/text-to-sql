@@ -1,0 +1,401 @@
+# Attack corpus and edge case test cases for text-to-sql guardrails
+# Format:
+# - id: unique identifier
+#   sql: SQL query string
+#   expected: ALLOW or REJECT
+#   category: classification category
+#   description: rationale for test
+
+- id: valid_simple_select
+  sql: "SELECT * FROM customers"
+  expected: ALLOW
+  category: allow
+  description: Simple table scan
+
+- id: valid_trailing_semicolon
+  sql: "SELECT customer_id, first_name FROM customers;"
+  expected: ALLOW
+  category: allow
+  description: Trailing semicolon is tolerated
+
+- id: valid_semicolon_comment
+  sql: "SELECT * FROM customers; -- note"
+  expected: ALLOW
+  category: allow
+  description: Semicolon followed by single line comment
+
+- id: valid_multiline_comment
+  sql: "SELECT * FROM customers; /* block comment */"
+  expected: ALLOW
+  category: allow
+  description: Semicolon followed by block comment
+
+- id: valid_double_semicolon
+  sql: "SELECT * FROM customers;;"
+  expected: ALLOW
+  category: allow
+  description: Multiple empty trailing semicolons
+
+- id: valid_cte_query
+  sql: "WITH t AS (SELECT customer_id FROM orders) SELECT * FROM t"
+  expected: ALLOW
+  category: allow
+  description: CTE with read query
+
+- id: valid_recursive_cte
+  sql: "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r WHERE n<5) SELECT n FROM r"
+  expected: ALLOW
+  category: allow
+  description: Recursive CTE reading sequence
+
+- id: valid_union_all
+  sql: "SELECT customer_id FROM customers UNION ALL SELECT customer_id FROM orders"
+  expected: ALLOW
+  category: allow
+  description: Set operation UNION ALL
+
+- id: valid_except
+  sql: "SELECT customer_id FROM customers EXCEPT SELECT customer_id FROM orders"
+  expected: ALLOW
+  category: allow
+  description: Set operation EXCEPT
+
+- id: valid_intersect
+  sql: "SELECT customer_id FROM customers INTERSECT SELECT customer_id FROM orders"
+  expected: ALLOW
+  category: allow
+  description: Set operation INTERSECT
+
+- id: valid_correlated_subquery
+  sql: "SELECT * FROM customers WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.customer_id)"
+  expected: ALLOW
+  category: allow
+  description: Correlated subquery with NOT EXISTS
+
+- id: valid_window_function
+  sql: "SELECT customer_id, RANK() OVER (ORDER BY created_at DESC) FROM customers"
+  expected: ALLOW
+  category: allow
+  description: Window function RANK() OVER
+
+- id: valid_scalar_functions
+  sql: "SELECT strftime('%Y', order_date), ROUND(total_amount, 2), IFNULL(phone, 'N/A') FROM orders"
+  expected: ALLOW
+  category: allow
+  description: Allowed scalar and aggregation functions
+
+- id: valid_main_qualified_table
+  sql: "SELECT * FROM main.customers"
+  expected: ALLOW
+  category: allow
+  description: Explicit main schema qualifier is permitted
+
+- id: valid_values_subquery
+  sql: "SELECT * FROM (VALUES (1), (2))"
+  expected: ALLOW
+  category: allow
+  description: VALUES row constructor inside a FROM subquery
+
+- id: valid_comment_with_drop
+  sql: "SELECT * FROM customers WHERE 1=1 -- ; DROP TABLE customers"
+  expected: ALLOW
+  category: allow
+  description: Comment containing DROP keyword should not trigger false positive
+
+- id: valid_literal_with_drop
+  sql: "SELECT '; DROP TABLE customers' FROM customers"
+  expected: ALLOW
+  category: allow
+  description: String literal containing stacked DROP should not trigger false positive
+
+- id: valid_quoted_table
+  sql: "SELECT * FROM \"customers\""
+  expected: ALLOW
+  category: allow
+  description: Double-quoted identifier
+
+# REJECT - 1. ATTACH / DETACH (Hole 1: file creation)
+- id: reject_attach_database
+  sql: "ATTACH DATABASE 'evil.db' AS evil"
+  expected: REJECT
+  category: attach
+  description: Administrative ATTACH command
+
+- id: reject_attach_shorthand
+  sql: "ATTACH 'evil.db' AS evil"
+  expected: REJECT
+  category: attach
+  description: Shorthand ATTACH statement
+
+- id: reject_detach
+  sql: "DETACH evil"
+  expected: REJECT
+  category: attach
+  description: DETACH command
+
+# REJECT - 2. VACUUM INTO (Hole 2: file creation)
+- id: reject_vacuum
+  sql: "VACUUM"
+  expected: REJECT
+  category: vacuum
+  description: Bare VACUUM command
+
+- id: reject_vacuum_into
+  sql: "VACUUM INTO '/tmp/evil.db'"
+  expected: REJECT
+  category: vacuum
+  description: VACUUM INTO creating file at arbitrary path
+
+# REJECT - 3. PRAGMA statements (Hole 3: administrative control)
+- id: reject_pragma_writable_schema
+  sql: "PRAGMA writable_schema = 1"
+  expected: REJECT
+  category: pragma
+  description: PRAGMA modifying sqlite internal state
+
+- id: reject_pragma_query_only
+  sql: "PRAGMA query_only = OFF"
+  expected: REJECT
+  category: pragma
+  description: Attempt to revoke query_only
+
+- id: reject_pragma_table_info
+  sql: "PRAGMA table_info(customers)"
+  expected: REJECT
+  category: pragma
+  description: PRAGMA inspection command
+
+# REJECT - 4. Memory Exhaustion / Blobs (Hole 4: DoS)
+- id: reject_randomblob
+  sql: "SELECT randomblob(2000000000)"
+  expected: REJECT
+  category: memory
+  description: Excessive blob memory allocation
+
+- id: reject_zeroblob
+  sql: "SELECT zeroblob(2000000000)"
+  expected: REJECT
+  category: memory
+  description: Excessive zeroblob allocation
+
+# REJECT - 5. Stacked statements & Comment tricks (Hole 5: parser split)
+- id: reject_stacked_drop
+  sql: "SELECT * FROM customers; DROP TABLE orders"
+  expected: REJECT
+  category: stacked
+  description: Stacked query with DROP
+
+- id: reject_stacked_comment_trick
+  sql: "SELECT 1; -- comment\nDROP TABLE customers"
+  expected: REJECT
+  category: stacked
+  description: Stacked query disguised across newline and comment
+
+- id: reject_stacked_select
+  sql: "SELECT 1; SELECT 2"
+  expected: REJECT
+  category: stacked
+  description: Multiple SELECT statements
+
+# REJECT - DDL & DML operations
+- id: reject_drop_table
+  sql: "DROP TABLE customers"
+  expected: REJECT
+  category: ddl
+  description: Direct DROP TABLE
+
+- id: reject_delete
+  sql: "DELETE FROM orders WHERE order_id = 1"
+  expected: REJECT
+  category: dml
+  description: Direct DELETE
+
+- id: reject_update
+  sql: "UPDATE products SET price = 0"
+  expected: REJECT
+  category: dml
+  description: Direct UPDATE
+
+- id: reject_insert
+  sql: "INSERT INTO products (product_name, price) VALUES ('Hacked', 0.0)"
+  expected: REJECT
+  category: dml
+  description: Direct INSERT
+
+- id: reject_insert_or_replace
+  sql: "INSERT OR REPLACE INTO products (product_id) VALUES (1)"
+  expected: REJECT
+  category: dml
+  description: INSERT OR REPLACE
+
+- id: reject_replace_into
+  sql: "REPLACE INTO products (product_id) VALUES (1)"
+  expected: REJECT
+  category: dml
+  description: REPLACE INTO syntax
+
+- id: reject_alter_table
+  sql: "ALTER TABLE customers ADD COLUMN evil TEXT"
+  expected: REJECT
+  category: ddl
+  description: ALTER TABLE statement
+
+- id: reject_create_temp_table
+  sql: "CREATE TEMP TABLE evil AS SELECT * FROM customers"
+  expected: REJECT
+  category: ddl
+  description: CREATE TEMP TABLE
+
+- id: reject_create_view
+  sql: "CREATE VIEW v AS SELECT 1"
+  expected: REJECT
+  category: ddl
+  description: CREATE VIEW statement
+
+# REJECT - CTE-wrapped DML
+- id: reject_cte_delete
+  sql: "WITH x AS (SELECT 1) DELETE FROM orders"
+  expected: REJECT
+  category: dml
+  description: CTE followed by DELETE
+
+- id: reject_cte_wrapped_dml
+  sql: "WITH d AS (DELETE FROM orders RETURNING *) SELECT * FROM d"
+  expected: REJECT
+  category: dml
+  description: Nested DML inside CTE definition
+
+# REJECT - Misparsed statements (REINDEX / SAVEPOINT / RELEASE)
+- id: reject_reindex
+  sql: "REINDEX"
+  expected: REJECT
+  category: admin
+  description: REINDEX administrative command
+
+- id: reject_analyze
+  sql: "ANALYZE"
+  expected: REJECT
+  category: admin
+  description: ANALYZE command
+
+- id: reject_savepoint
+  sql: "SAVEPOINT sp1"
+  expected: REJECT
+  category: transaction
+  description: Transaction SAVEPOINT
+
+- id: reject_release
+  sql: "RELEASE sp1"
+  expected: REJECT
+  category: transaction
+  description: Transaction RELEASE
+
+- id: reject_begin
+  sql: "BEGIN"
+  expected: REJECT
+  category: transaction
+  description: Explicit transaction BEGIN
+
+- id: reject_commit
+  sql: "COMMIT"
+  expected: REJECT
+  category: transaction
+  description: Explicit transaction COMMIT
+
+# REJECT - Forbidden functions
+- id: reject_load_extension
+  sql: "SELECT load_extension('evil')"
+  expected: REJECT
+  category: functions
+  description: Loading external C extension
+
+- id: reject_writefile
+  sql: "SELECT writefile('/tmp/owned', 'data')"
+  expected: REJECT
+  category: functions
+  description: Arbitrary file write function
+
+- id: reject_readfile
+  sql: "SELECT readfile('/etc/passwd')"
+  expected: REJECT
+  category: functions
+  description: Arbitrary file read function
+
+- id: reject_fts3_tokenizer
+  sql: "SELECT fts3_tokenizer('x')"
+  expected: REJECT
+  category: functions
+  description: FTS3 tokenizer execution
+
+# REJECT - Table checks & TVFs
+- id: reject_pragma_table_info_tvf
+  sql: "SELECT * FROM pragma_table_info('orders')"
+  expected: REJECT
+  category: table_checks
+  description: Table-valued function pragma_table_info
+
+- id: reject_sqlite_master
+  sql: "SELECT * FROM sqlite_master"
+  expected: REJECT
+  category: table_checks
+  description: Querying sqlite internal system catalog
+
+- id: reject_sqlite_schema
+  sql: "SELECT * FROM sqlite_schema"
+  expected: REJECT
+  category: table_checks
+  description: Querying sqlite_schema system catalog
+
+- id: reject_qualified_external_db
+  sql: "SELECT * FROM y.customers"
+  expected: REJECT
+  category: table_checks
+  description: External database qualifier
+
+- id: reject_temp_db_qualifier
+  sql: "SELECT * FROM temp.orders"
+  expected: REJECT
+  category: table_checks
+  description: Temp database qualifier
+
+- id: reject_json_each
+  sql: "SELECT * FROM json_each('[1]')"
+  expected: REJECT
+  category: table_checks
+  description: Table-valued function json_each
+
+- id: reject_generate_series
+  sql: "SELECT * FROM generate_series(1, 10)"
+  expected: REJECT
+  category: table_checks
+  description: Table-valued function generate_series
+
+- id: reject_select_into
+  sql: "SELECT 1 INTO evil FROM orders"
+  expected: REJECT
+  category: dml
+  description: SELECT INTO table creation
+
+- id: reject_values_root
+  sql: "VALUES (1), (2)"
+  expected: REJECT
+  category: root
+  description: Root VALUES row constructor without SELECT
+
+- id: reject_empty_query
+  sql: "   "
+  expected: REJECT
+  category: syntax
+  description: Blank or whitespace string
+
+- id: reject_comment_only
+  sql: "-- just a comment"
+  expected: REJECT
+  category: syntax
+  description: Comment with no executable SQL
+
+- id: reject_syntax_error
+  sql: "SELEC * FROM orders"
+  expected: REJECT
+  category: syntax
+  description: Invalid SQL keyword typo
