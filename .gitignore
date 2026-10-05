@@ -2,10 +2,13 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
 
 # Virtual Environments
@@ -36,6 +39,8 @@ ecommerce.tmp
 ._*
 .Spotlight-V100
 .Trashes
+Thumbs.db
+ehthumbs.db
 
 # IDE & Editors
 .idea/
@@ -43,6 +48,8 @@ ecommerce.tmp
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # Logs
 *.log
@@ -50,4 +57,5 @@ logs/
 
 # Build output
 dist/
+build/
 *.egg-info/

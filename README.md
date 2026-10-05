@@ -51,7 +51,7 @@ not. Parsing sees the difference.
 **Why not trust sqlglot alone?** Parsers disagree. sqlglot reads `REINDEX` as a column name and
 `SAVEPOINT a` as an alias. The root allowlist catches those, and the authorizer works on SQLite's
 own parse, so a parser mistake can't get a write through. sqlglot is pinned in `uv.lock`, and the
-attack corpus runs in CI as the guard when it is upgraded.
+attack corpus in `tests/test_guardrails.py` guards against parser regressions.
 
 | What comes back | What happens |
 |---|---|
