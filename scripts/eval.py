@@ -6,20 +6,23 @@ but extra or missing columns do.
 
 Run from the project root, with OPENROUTER_API_KEY in .env:
 
-    .venv/bin/python -m scripts.eval
+    uv run python -m scripts.eval
 
-Each question is one request, and OpenRouter's free tier allows 50 a day.
+Each question can use up to 3 calls with retries, and OpenRouter's free tier allows 50 requests a day.
+Exit codes: 2 when there is no key, 3 when OpenRouter keeps answering 429 (daily quota used up).
 """
 
 import os
 import sqlite3
+import sys
 import tempfile
 import time
 
 from dotenv import load_dotenv
 
-from src.database import init_db
-from src.engine import TextToSQLEngine
+from text_to_sql.database import init_db
+from text_to_sql.engine import TextToSQLEngine
+from text_to_sql.llm import RATE_LIMITED
 
 QUESTIONS = [
     ("How many customers are there?", "SELECT COUNT(*) FROM customers"),
@@ -112,6 +115,13 @@ def normalise(rows):
 
 def main():
     load_dotenv(".env")
+    if not os.environ.get("OPENROUTER_API_KEY", "").strip():
+        print(
+            "Error: OPENROUTER_API_KEY is not set in environment or .env. Aborting eval.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     db_path = os.path.join(tempfile.mkdtemp(), "eval.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
@@ -121,6 +131,10 @@ def main():
     for i, (question, reference) in enumerate(QUESTIONS, 1):
         expected = normalise(conn.execute(reference).fetchall())
         result = engine.execute_query(question)
+        if result.error == RATE_LIMITED:
+            print(f"\nStopped at question {i}: {RATE_LIMITED}", file=sys.stderr)
+            print(f"{correct}/{i - 1} correct before the stop.", file=sys.stderr)
+            sys.exit(3)
         ok = result.error is None and normalise(result.rows) == expected
         correct += ok
         print(f"{'PASS' if ok else 'FAIL'}  {i:2}. {question}")
