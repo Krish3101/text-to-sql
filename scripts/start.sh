@@ -4,17 +4,9 @@ set -e
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if ! command -v python3 &>/dev/null; then
-    echo "Error: python3 is not installed or not in PATH."
+if ! command -v uv &>/dev/null; then
+    echo "Error: uv is not installed. Please install uv (https://docs.astral.sh/uv/)."
     exit 1
-fi
-
-if [ ! -d ".venv" ]; then
-    echo "Creating virtual environment in .venv..."
-    python3 -m venv .venv
-    echo "Installing dependencies..."
-    .venv/bin/pip install --quiet --upgrade pip
-    .venv/bin/pip install --quiet -r requirements.txt
 fi
 
 if [ ! -f ".env" ]; then
@@ -22,5 +14,7 @@ if [ ! -f ".env" ]; then
     cp .env.example .env
 fi
 
-echo "Starting Text-to-SQL on http://localhost:8501"
-exec .venv/bin/streamlit run app.py
+PORT="${PORT:-8501}"
+uv sync --locked
+echo "Starting Text-to-SQL on http://localhost:$PORT"
+exec uv run streamlit run app.py --server.port "$PORT" --server.headless true

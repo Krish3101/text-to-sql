@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "text-to-sql"
 version = "1.0.0"
@@ -19,7 +23,11 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.16.0",
+    "pyyaml>=6.0.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/text_to_sql"]
 
 [tool.ruff]
 line-length = 100
@@ -31,6 +39,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

@@ -25,6 +25,10 @@ env/
 *.sqlite3
 *.sqlite
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
+ecommerce.tmp
 
 # macOS & System Files
 .DS_Store
@@ -43,3 +47,7 @@ env/
 # Logs
 *.log
 logs/
+
+# Build output
+dist/
+*.egg-info/
