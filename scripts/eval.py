@@ -8,7 +8,8 @@ Run from the project root, with OPENROUTER_API_KEY in .env:
 
     uv run python -m scripts.eval
 
-Each question can use up to 3 calls with retries, and OpenRouter's free tier allows 50 requests a day.
+Each question can use up to 3 model calls (plus retries on rate limits), and OpenRouter's free
+tier allows 50 requests a day.
 Exit codes: 2 when there is no key, 3 when OpenRouter keeps answering 429 (daily quota used up).
 """
 

@@ -20,7 +20,7 @@ allowlist and SQLite's own authorizer decide whether it runs.
    would return nothing.
 3. **One model** (`nvidia/nemotron-3-super-120b-a12b:free`) through OpenRouter. A free key is
    enough. If SQLite can't compile the reply, the error goes back to the model, so a question uses
-   at most 3 calls. A refusal or a rejected destructive query is never retried.
+   up to 3 model calls (plus retries on rate limits). A refusal or a rejected destructive query is never retried.
 4. If the request asks to change data, the model is told to reply exactly `-- REFUSE: read-only`.
    That counts only when it is the whole reply.
 
@@ -34,14 +34,15 @@ The model is not trusted. Its SQL has to pass three independent layers.
      `PRAGMA`, `ATTACH`, `VACUUM`, transaction commands or `SELECT … INTO` is rejected.
    - Only the four known tables and CTE names defined in that part of the query. No
      `sqlite_master`, no other database prefix, no table-valued functions such as `json_each`.
-   - Only allowlisted functions, so `load_extension`, `readfile` and `randomblob` are out.
+   - Only allowlisted functions, checked for every call (also the ones sqlglot knows), so
+     `load_extension`, `readfile`, `randomblob` and `median` are out.
    - The table list comes from `schema.sql`, and the function list is shared with layer 2.
 2. **SQLite authorizer and limits** (`executor.py`). SQLite checks every step itself:
    - the authorizer allows only `SELECT`, reads of the four tables and the same function
      allowlist, and denies everything else (writes, DDL, `PRAGMA`, `ATTACH`, SQLite's own
      tables, table-valued functions such as `json_each`);
    - `setlimit`: no attached databases, 1 MB per value, 20 KB of SQL;
-   - a 3 s wall-clock deadline and a 1,000-row cap.
+   - a 3 s wall-clock deadline, a 1,000-row cap and a 10 MB cap on the text and blob data returned.
 3. **A read-only file.** The connection is opened with `mode=ro` and `query_only`.
 
 **Why not a regex?** Comments, casing and string literals beat a keyword list.
@@ -72,7 +73,7 @@ the data unchanged. That proves layer 2 on its own.
 
 ## Where it fails on joins
 
-The eval has 20 questions and only about 4 of them need a join, so **the join failure rate is not
+The eval has 20 questions and only 3 of them need a join, so **the join failure rate is not
 measured yet**. What I can show is where joins go wrong on this data. These numbers come from
 `tests/test_seed.py`, with no model involved:
 
@@ -131,16 +132,17 @@ default free model).
 uv run pytest -q
 ```
 
-162 tests:
+189 tests:
 
 | File | Tests | What |
 |---|---|---|
-| `test_guardrails.py` | 84 | the AST allowlist, including the 64 cases in `attacks.yaml` |
-| `test_executor.py` | 22 | layer 2 with the guardrail skipped, the row cap and the deadline |
+| `test_guardrails.py` | 101 | the AST allowlist, including the 64 cases in `attacks.yaml` |
+| `test_executor.py` | 28 | layer 2 with the guardrail skipped, the row cap and the deadline |
 | `test_extract.py` | 12 | pulling SQL out of replies, refusal detection |
 | `test_llm.py` | 18 | OpenRouter errors with a fake `urlopen`, eval exit codes |
 | `test_prompt.py` | 12 | the prompt schema equals `sqlite_master`, data notes, no answer hints |
-| `test_engine.py` | 7 | retries, refusals, timeouts |
+| `test_engine.py` | 9 | retries, refusals, timeouts, duplicate column names |
+| `test_ui.py` | 2 | the Streamlit page with a scripted model |
 | `test_seed.py` | 7 | seed fingerprint and the join numbers above |
 
 ```

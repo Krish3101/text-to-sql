@@ -71,7 +71,7 @@ else:
 if "sql_engine" not in st.session_state:
     st.session_state["sql_engine"] = TextToSQLEngine(db_path=DEFAULT_DB_PATH, api_key=active_key)
 engine = st.session_state["sql_engine"]
-if engine.provider.api_key != active_key:
+if (engine.provider.api_key or "") != (active_key or ""):
     engine.provider = OpenRouterProvider(api_key=active_key)
 
 tab_query, tab_schema = st.tabs(["Query", "Schema"])

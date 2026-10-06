@@ -1,15 +1,17 @@
-"""AST Security Guardrails for Text-to-SQL.
+"""AST guardrails for Text-to-SQL.
 
-Enforces a strict AST allowlist:
+Enforces an AST allowlist:
 - Only SELECT/UNION/INTERSECT/EXCEPT statements are permitted at the root.
 - Rejects root VALUES.
 - Walks the AST to reject any DML, DDL, Command, Pragma, Attach, Detach, Transaction, Into, etc.
-- Functions sqlglot doesn't know must be on ALLOWED_FUNCTIONS (so load_extension, readfile, etc. fail).
+- Every function call must be on ALLOWED_FUNCTIONS, whether or not sqlglot knows it
+  (so load_extension, readfile, sqrt, etc. fail here instead of at SQLite).
 - Enforces table allowlist (known schema tables and CTE names in scope only; blocks sqlite_master).
 - Tolerates trailing semicolons and comments.
 - Returns Verdict(status=ALLOW|REJECT, reason=str).
 """
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -25,14 +27,16 @@ class Status(str, Enum):
     REJECT = "REJECT"
 
 
-# The one function allowlist, by SQLite's own names. The AST check uses it for functions sqlglot
-# doesn't know, and the executor's SQLite authorizer checks every function call against it.
+# The one function allowlist, by SQLite's own names. The AST check and the executor's SQLite
+# authorizer both check every function call against it. sqrt/pow/power/mod need a SQLite built
+# with math functions; without them the query fails at SQLite with "no such function".
 ALLOWED_FUNCTIONS = frozenset(
     {
         # aggregates
         "count", "sum", "avg", "min", "max", "total", "group_concat", "string_agg",
         # numbers
-        "round", "abs", "sign", "trunc", "floor", "ceil", "ceiling", "random",
+        "round", "abs", "sign", "trunc", "floor", "ceil", "ceiling", "random", "sqrt", "pow",
+        "power", "mod",
         # null handling and conditionals
         "coalesce", "ifnull", "nullif", "iif", "likely", "unlikely",
         # text
@@ -92,6 +96,39 @@ def _cte_in_scope(table: exp.Table, name: str) -> bool:
             return True
         ancestor = ancestor.parent
     return False
+
+
+# sqlglot models these as Func nodes, but SQLite has no function of that name: CAST, CASE,
+# EXISTS, AND/OR and COLLATE are syntax, and the TsOrDs wrappers are added around date arguments
+# by the parser.
+_NON_FUNCTION_NODES = (
+    exp.Cast,
+    exp.TryCast,
+    exp.Case,
+    exp.Exists,
+    exp.Connector,
+    exp.Collate,
+    exp.TsOrDsToTimestamp,
+    exp.TsOrDsToDate,
+    exp.TsOrDsToDatetime,
+    exp.TsOrDsToTime,
+)
+_FUNCTION_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\(")
+
+
+def _function_name(node: exp.Func) -> str:
+    """The name SQLite sees for a sqlglot function node (strftime is TimeToStr, char is Chr, ...)."""
+    if isinstance(node, exp.JSONExtractScalar):
+        rendered = node.sql(dialect="sqlite")
+        return "->>" if " ->> " in rendered else "json_extract"
+    if isinstance(node, exp.JSONExtract):
+        rendered = node.sql(dialect="sqlite")
+        return "->" if " -> " in rendered else "json_extract"
+    match = _FUNCTION_NAME.match(node.sql(dialect="sqlite"))
+    if match:
+        return match.group(1).lower()
+    # No call syntax (CURRENT_TIMESTAMP, REGEXP, ...): fall back to sqlglot's own name.
+    return type(node).sql_names()[0].lower()
 
 
 def validate_sql(sql: str) -> Verdict:
@@ -158,14 +195,20 @@ def validate_sql(sql: str) -> Verdict:
                 code="disallowed_node",
             )
 
-        # 2. Functions sqlglot doesn't recognise must be on the allowlist
-        # (load_extension, readfile, randomblob, ... all land here)
+        # 2. Every function call must be on the allowlist, including ones sqlglot knows.
+        # (load_extension, readfile, randomblob, ... are unknown to sqlglot and land in Anonymous)
+        func_name = None
         if isinstance(node, exp.Anonymous):
-            anon_name = node.name.lower()
-            if anon_name not in ALLOWED_FUNCTIONS:
+            func_name = node.name.lower()
+        elif isinstance(node, exp.Match):
+            func_name = "match"  # the MATCH operator calls a function of that name
+        elif isinstance(node, exp.Func) and not isinstance(node, _NON_FUNCTION_NODES):
+            func_name = _function_name(node)
+        if func_name is not None:
+            if func_name not in ALLOWED_FUNCTIONS:
                 return Verdict(
                     status=Status.REJECT,
-                    reason=f"Disallowed function call '{anon_name}'. Only safe scalar functions are permitted.",
+                    reason=f"Disallowed function call '{func_name}'. Only safe scalar functions are permitted.",
                     code="disallowed_function",
                 )
 

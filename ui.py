@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from text_to_sql.config import MAX_ROWS
+from text_to_sql.config import MAX_RESULT_BYTES, MAX_ROWS
 from text_to_sql.database import get_database_stats
 from text_to_sql.engine import QueryResult, TextToSQLEngine
 from text_to_sql.guardrails import validate_sql
@@ -64,10 +64,12 @@ def render_verdict_banner(allowed: bool, reason: str | None, executed: bool) -> 
     """Shows the guardrail verdict and which checks ran."""
     if allowed:
         st.success("Allowed: read-only query")
-        where = (
-            "ran on a read-only connection" if executed else "would run on a read-only connection"
-        )
-        st.caption(f"✓ 1 statement  •  ✓ parsed as SELECT  •  ✓ no ATTACH/PRAGMA  •  ✓ {where}")
+        if executed:
+            st.caption("Passed the AST check. Executed on a read-only connection.")
+        else:
+            st.caption(
+                "Passed the AST check only. Nothing was executed, and SQLite may still fail it."
+            )
     else:
         st.error(f"Rejected by guardrails: {reason}")
         st.caption("Nothing was executed.")
@@ -125,9 +127,14 @@ def render_live_query_tab(engine: TextToSQLEngine, has_key: bool) -> None:
     with col_btn2:
         st.button("Clear", on_click=_clear_input, width="stretch")
 
-    if run_clicked and user_prompt.strip():
-        with st.spinner("Asking the model for SQL and checking it. This can take about 20 s..."):
-            st.session_state["last_query_result"] = engine.execute_query(user_prompt.strip())
+    if run_clicked:
+        if user_prompt.strip():
+            with st.spinner(
+                "Asking the model for SQL and checking it. This can take about 20 s..."
+            ):
+                st.session_state["last_query_result"] = engine.execute_query(user_prompt.strip())
+        else:
+            st.warning("Please enter a question.")
 
     if st.session_state.get("last_query_result") is not None:
         _display_query_result(st.session_state["last_query_result"])
@@ -171,7 +178,8 @@ def _display_query_result(result: QueryResult) -> None:
         st.dataframe(result.dataframe, width="stretch", hide_index=True)
         if result.truncated:
             st.info(
-                f"Showing the first {result.row_count:,} rows (results are capped at {MAX_ROWS:,})."
+                f"Showing the first {result.row_count:,} rows (results are capped at "
+                f"{MAX_ROWS:,} rows or {MAX_RESULT_BYTES // 1_000_000} MB)."
             )
         else:
             st.caption(f"{result.row_count} row(s) returned.")

@@ -47,7 +47,7 @@ def test_read_query_runs(engine):
 
 
 def test_write_query_is_rejected(engine):
-    """Writing queries are rejected by guardrails without approval or execution."""
+    """Writes are rejected by the guardrail and never executed."""
     res = ask(
         engine,
         "INSERT INTO customers (first_name, last_name, email, city, state) "
@@ -114,3 +114,21 @@ def test_timeout_reported_cleanly(engine):
     res = ask(engine, infinite_sql)
     assert res.error is not None
     assert "timed out" in res.error.lower()
+
+
+def test_duplicate_column_names_made_unique(engine):
+    res = ask(
+        engine,
+        "SELECT * FROM customers c JOIN orders o ON o.customer_id = c.customer_id LIMIT 3",
+    )
+    assert res.error is None
+    names = list(res.dataframe.columns)
+    assert len(names) == len(set(names))
+    assert "customer_id" in names and "customer_id_2" in names
+    assert res.columns.count("customer_id") == 2
+
+
+def test_unique_names_avoid_existing_names():
+    from text_to_sql.engine import _unique_names
+
+    assert _unique_names(["a", "a", "a_2", "a"]) == ["a", "a_3", "a_2", "a_4"]

@@ -33,7 +33,24 @@ class QueryResult:
     def dataframe(self) -> pd.DataFrame | None:
         if not self.columns:
             return None
-        return pd.DataFrame(self.rows, columns=self.columns)
+        return pd.DataFrame(self.rows, columns=_unique_names(self.columns))
+
+
+def _unique_names(names: list[str]) -> list[str]:
+    """Renames repeats (customer_id, customer_id -> customer_id, customer_id_2); Arrow rejects duplicates."""
+    taken = set(names)
+    emitted: set[str] = set()
+    result = []
+    for name in names:
+        if name in emitted:
+            n = 2
+            while f"{name}_{n}" in taken:
+                n += 1
+            name = f"{name}_{n}"
+            taken.add(name)
+        emitted.add(name)
+        result.append(name)
+    return result
 
 
 def validate_sqlite_syntax(sql: str, db_path: str | Path) -> tuple[bool, str | None]:

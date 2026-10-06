@@ -1,4 +1,4 @@
-"""Read-only SQLite query executor with defense-in-depth security.
+"""Read-only SQLite query executor, with three independent checks.
 
 Enforces:
 1. URI mode=ro read-only connection.
@@ -11,7 +11,7 @@ Enforces:
    - Allows only SELECT, RECURSIVE, safe functions, and READs from known schema tables.
    - Denies ATTACH, DETACH, PRAGMA, writes, DDL, VACUUM, and sqlite_master access.
 5. Wall-clock execution deadline (3.0 seconds default).
-6. Result row cap (1,000 rows default) with 'truncated' flag.
+6. Result cap (1,000 rows and about 10 MB of text/blob data by default) with 'truncated' flag.
 """
 
 import functools
@@ -23,6 +23,7 @@ from typing import Any
 from text_to_sql.config import (
     DEFAULT_DB_PATH,
     MAX_CELL_BYTES,
+    MAX_RESULT_BYTES,
     MAX_ROWS,
     MAX_SQL_BYTES,
     QUERY_TIMEOUT_S,
@@ -80,7 +81,7 @@ def _security_authorizer(
 
 def connect_ro(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """
-    Opens an isolated, hardened read-only SQLite connection.
+    Opens an isolated read-only SQLite connection.
     Enforces mode=ro, query_only, authorizer, and resource limits.
     """
     resolved = Path(db_path).resolve()
@@ -119,10 +120,12 @@ def execute_query(
     db_path: str | Path = DEFAULT_DB_PATH,
     timeout_s: float = QUERY_TIMEOUT_S,
     max_rows: int = MAX_ROWS,
+    max_bytes: int = MAX_RESULT_BYTES,
 ) -> tuple[list[str], list[tuple[Any, ...]], bool]:
     """
     Executes a read-only query under authorizer security and wall-clock timeout.
-    Returns (columns, rows, is_truncated).
+    Returns (columns, rows, is_truncated). Stops fetching at max_rows rows or max_bytes of
+    text/blob data, because the row cap alone doesn't bound memory when cells are large.
     """
     conn = connect_ro(db_path)
     try:
@@ -133,9 +136,15 @@ def execute_query(
         cursor.execute(sql)
 
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        raw_rows = cursor.fetchmany(max_rows + 1)
-        is_truncated = len(raw_rows) > max_rows
-        rows = raw_rows[:max_rows]
+        rows: list[tuple[Any, ...]] = []
+        is_truncated = False
+        total_bytes = 0
+        for row in cursor:
+            total_bytes += sum(len(v) for v in row if isinstance(v, (str, bytes)))
+            if len(rows) >= max_rows or total_bytes > max_bytes:
+                is_truncated = True
+                break
+            rows.append(row)
         cursor.close()
 
         return columns, rows, is_truncated

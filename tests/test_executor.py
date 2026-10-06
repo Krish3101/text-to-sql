@@ -165,3 +165,24 @@ def test_json_operators_pass_both_layers(seeded_db, sql, expected):
     """Layer 1 allows the JSON operators, so Layer 2 must too."""
     assert validate_sql(sql).allowed
     assert execute_query(sql, seeded_db)[1] == [(expected,)]
+
+
+def test_executor_byte_budget(seeded_db):
+    """The result stops at the byte budget even when the row cap is far away."""
+    sql = "SELECT a.item_id, printf('%1000s', 'x') FROM order_items a, order_items b"
+    cols, rows, is_truncated = execute_query(sql, seeded_db, max_rows=1000, max_bytes=10_000)
+    assert is_truncated is True
+    assert 0 < len(rows) <= 10
+
+
+def test_executor_within_byte_budget_not_truncated(seeded_db):
+    cols, rows, is_truncated = execute_query("SELECT product_name FROM products", seeded_db)
+    assert is_truncated is False
+    assert len(rows) == 25
+
+
+@pytest.mark.parametrize("func", ["sqrt(4)", "pow(2, 3)", "power(2, 3)", "mod(5, 3)"])
+def test_allowlisted_math_functions_execute(seeded_db, func):
+    """These are on the allowlist only because this SQLite build has them."""
+    assert validate_sql(f"SELECT {func}").allowed
+    assert len(execute_query(f"SELECT {func}", seeded_db)[1]) == 1

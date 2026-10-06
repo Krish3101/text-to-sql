@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from text_to_sql.config import DEFAULT_DB_PATH, SCHEMA_PATH, SEED_PATH, SEED_VERSION
@@ -34,13 +35,9 @@ def init_db(db_path: str | Path = DEFAULT_DB_PATH, force: bool = False) -> str:
 
     if resolved.exists() and not force:
         try:
-            conn = sqlite3.connect(str(resolved), timeout=5.0)
-            cur = conn.cursor()
-            cur.execute("PRAGMA user_version;")
-            ver = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM customers;")
-            count = cur.fetchone()[0]
-            conn.close()
+            with closing(sqlite3.connect(str(resolved), timeout=5.0)) as conn:
+                ver = conn.execute("PRAGMA user_version;").fetchone()[0]
+                count = conn.execute("SELECT COUNT(*) FROM customers;").fetchone()[0]
             if ver == SEED_VERSION and count > 0:
                 return str(resolved)
         except Exception:

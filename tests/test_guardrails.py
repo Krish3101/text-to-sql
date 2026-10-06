@@ -25,7 +25,7 @@ def test_valid_cte_query():
 
 
 def test_write_query_rejection():
-    """Writes must be rejected immediately (write-approval flow is removed)."""
+    """Writes are rejected by the guardrail."""
     insert_sql = "INSERT INTO customers (first_name, last_name, email, city, state) VALUES ('John', 'Doe', 'john@test.com', 'Miami', 'FL');"
     verdict = validate_sql(insert_sql)
     assert verdict.status == Status.REJECT
@@ -158,3 +158,48 @@ def test_attack_corpus(case):
         f"{case['id']}: expected {case['expected']}, got {verdict.status.value} "
         f"({verdict.reason}) for SQL:\n{case['sql']}"
     )
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        "median(price)",
+        "stddev(price)",
+        "json_group_array(name)",
+        "unhex('41')",
+        "current_timestamp",
+    ],
+)
+def test_known_functions_not_on_allowlist_rejected(func):
+    verdict = validate_sql(f"SELECT {func} FROM products")
+    assert verdict.code == "disallowed_function"
+    assert "disallowed function call" in verdict.reason.lower()
+
+
+def test_match_and_regexp_rejected():
+    for sql in ["SELECT name MATCH 'x' FROM products", "SELECT name REGEXP 'x' FROM products"]:
+        assert validate_sql(sql).code == "disallowed_function"
+
+
+def test_rejection_names_the_sqlite_function():
+    verdict = validate_sql("SELECT median(price) FROM products")
+    assert "'percentile_cont'" in verdict.reason or "'median'" in verdict.reason
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT strftime('%Y', order_date) FROM orders",
+        "SELECT group_concat(status) FROM orders",
+        "SELECT char(65)",
+        "SELECT row_number() OVER (ORDER BY order_id) FROM orders",
+        "SELECT coalesce(notes, 'x'), ifnull(notes, 'x') FROM orders",
+        "SELECT CAST(total_amount AS INTEGER), CASE WHEN total_amount > 1 THEN 1 ELSE 0 END FROM orders",
+        "SELECT '{\"a\": 1}' ->> '$.a', '{\"a\": 1}' -> '$.a'",
+        "SELECT sqrt(4), pow(2, 3), power(2, 3), mod(5, 3)",
+        "SELECT * FROM orders WHERE total_amount > 1 AND NOT EXISTS (SELECT 1 FROM customers)",
+        "SELECT status FROM orders WHERE status = 'a' COLLATE NOCASE OR status LIKE 'b%'",
+    ],
+)
+def test_functions_sqlglot_renames_still_pass(sql):
+    assert validate_sql(sql).allowed

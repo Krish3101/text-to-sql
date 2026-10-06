@@ -1,61 +1,16 @@
-# Python Bytecode & Caches
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
 .pytest_cache/
 .ruff_cache/
-.mypy_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# Virtual Environments
 .venv/
-venv/
-ENV/
-env/
 
-# Environment Variables & Credentials
+# Secrets
 .env
-.env.*
 !.env.example
-*.pem
-*.key
 
-# Local SQLite Databases & Artifacts
-*.sqlite3
-*.sqlite
+# Generated database
 *.db
-*.db-wal
-*.db-shm
-*.db-journal
 ecommerce.tmp
 
-# macOS & System Files
+# macOS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-Thumbs.db
-ehthumbs.db
-
-# IDE & Editors
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-*.sublime-project
-*.sublime-workspace
-
-# Logs
-*.log
-logs/
-
-# Build output
-dist/
-build/
-*.egg-info/
