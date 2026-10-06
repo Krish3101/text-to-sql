@@ -1,5 +1,6 @@
 """Constants used across the app."""
 
+import os
 from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -18,3 +19,8 @@ MAX_CELL_BYTES = 1_000_000
 MAX_SQL_BYTES = 20_000
 MAX_RETRIES = 2
 SEED_VERSION = 2
+
+
+def get_model() -> str:
+    """OPENROUTER_MODEL if set and not blank, else DEFAULT_MODEL. Read at call time, after load_dotenv."""
+    return os.environ.get("OPENROUTER_MODEL", "").strip() or DEFAULT_MODEL

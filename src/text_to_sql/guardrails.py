@@ -45,6 +45,8 @@ ALLOWED_FUNCTIONS = frozenset(
         "row_number", "rank", "dense_rank", "percent_rank", "cume_dist", "ntile", "lag",
         "lead", "first_value", "last_value", "nth_value",
         "sqlite_version",
+        # JSON (the -> and ->> operators reach SQLite's authorizer as functions named "->" and "->>")
+        "json_extract", "->", "->>",
     }
 )  # fmt: skip
 

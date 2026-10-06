@@ -146,3 +146,18 @@ def test_no_key_means_no_request(monkeypatch):
     assert not result.success
     assert "No OpenRouter API key" in result.error
     assert calls == []
+
+
+def test_model_env_override(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_MODEL", "  vendor/some-model  ")
+    assert OpenRouterProvider(api_key="k").model == "vendor/some-model"
+    assert OpenRouterProvider(api_key="k", model="explicit/model").model == "explicit/model"
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_model_env_unset_or_blank_uses_default(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    else:
+        monkeypatch.setenv("OPENROUTER_MODEL", value)
+    assert OpenRouterProvider(api_key="k").model == OpenRouterProvider.DEFAULT_MODEL

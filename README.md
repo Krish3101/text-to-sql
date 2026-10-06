@@ -122,20 +122,23 @@ It creates `.env` from `.env.example` if it is missing, runs `uv sync --locked` 
 Streamlit. Without a key you can still use **Check my own SQL**, which runs the AST check on SQL
 you type.
 
+To use another model, set `OPENROUTER_MODEL` in `.env` (any OpenRouter model id; blank keeps the
+default free model).
+
 ## Tests
 
 ```bash
 uv run pytest -q
 ```
 
-152 tests:
+162 tests:
 
 | File | Tests | What |
 |---|---|---|
 | `test_guardrails.py` | 84 | the AST allowlist, including the 64 cases in `attacks.yaml` |
-| `test_executor.py` | 16 | layer 2 with the guardrail skipped, the row cap and the deadline |
+| `test_executor.py` | 22 | layer 2 with the guardrail skipped, the row cap and the deadline |
 | `test_extract.py` | 12 | pulling SQL out of replies, refusal detection |
-| `test_llm.py` | 14 | OpenRouter errors with a fake `urlopen`, eval exit codes |
+| `test_llm.py` | 18 | OpenRouter errors with a fake `urlopen`, eval exit codes |
 | `test_prompt.py` | 12 | the prompt schema equals `sqlite_master`, data notes, no answer hints |
 | `test_engine.py` | 7 | retries, refusals, timeouts |
 | `test_seed.py` | 7 | seed fingerprint and the join numbers above |

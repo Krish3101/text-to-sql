@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from text_to_sql.config import DEFAULT_MODEL
+from text_to_sql.config import DEFAULT_MODEL, get_model
 from text_to_sql.extract import REFUSAL, extract_sql, is_refusal
 from text_to_sql.prompt import get_sqlite_prompt
 
@@ -36,12 +36,12 @@ class OpenRouterProvider:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         temperature: float = 0.0,
         timeout: float = 60.0,
     ):
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
-        self.model = model
+        self.model = model or get_model()
         self.temperature = temperature
         self.timeout = timeout
 

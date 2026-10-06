@@ -5,7 +5,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from text_to_sql.config import DEFAULT_DB_PATH, DEFAULT_MODEL
+from text_to_sql.config import DEFAULT_DB_PATH, get_model
 from text_to_sql.database import init_db
 from text_to_sql.engine import TextToSQLEngine
 from text_to_sql.llm import OpenRouterProvider
@@ -55,7 +55,7 @@ if not active_key:
 else:
     col_info, col_ovr = st.columns([5, 3])
     with col_info:
-        model_msg = f"Model: `{DEFAULT_MODEL}`"
+        model_msg = f"Model: `{get_model()}`"
         source_msg = (
             " (using key from `.env`)" if not session_key and env_key else " (session key active)"
         )

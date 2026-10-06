@@ -14,6 +14,7 @@ Enforces:
 6. Result row cap (1,000 rows default) with 'truncated' flag.
 """
 
+import functools
 import sqlite3
 import time
 from pathlib import Path
@@ -35,11 +36,19 @@ TABLE_FUNCTIONS = frozenset(
 )
 
 
-def _security_authorizer(action_code: int, arg1: Any, arg2: Any, dbname: Any, source: Any) -> int:
+def _security_authorizer(
+    action_code: int,
+    arg1: Any,
+    arg2: Any,
+    dbname: Any,
+    source: Any,
+    physical_tables: frozenset[str] = frozenset(),
+) -> int:
     """
     SQLite authorizer callback for read-only isolation.
     Only permits SELECT, RECURSIVE queries, authorized scalar functions,
     and reading from known application schema tables.
+    physical_tables is every table/view in the database; connect_ro fills it in.
     """
     if action_code in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_RECURSIVE):
         return sqlite3.SQLITE_OK
@@ -51,9 +60,11 @@ def _security_authorizer(action_code: int, arg1: Any, arg2: Any, dbname: Any, so
                 return sqlite3.SQLITE_OK
             return sqlite3.SQLITE_DENY
         # No database name: SQLite's table-level check when no column is read (COUNT(*), SELECT 1).
-        # It also fires for CTE names, which can't be known here, so block SQLite's own tables
-        # and the table-valued functions by name.
+        # It also fires for CTE names, so deny by name: SQLite's own tables, the table-valued
+        # functions, and real tables that are not in KNOWN_TABLES.
         if tbl.startswith(("sqlite_", "pragma_")) or tbl in TABLE_FUNCTIONS:
+            return sqlite3.SQLITE_DENY
+        if tbl in physical_tables and tbl not in KNOWN_TABLES:
             return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
 
@@ -87,8 +98,15 @@ def connect_ro(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MAX_CELL_BYTES)
         conn.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, MAX_SQL_BYTES)
 
-        # 3. Install authorizer (PRAGMAs cannot be changed after this)
-        conn.set_authorizer(_security_authorizer)
+        # 3. Install authorizer (PRAGMAs cannot be changed after this). The table list is read
+        # first, while nothing is restricted.
+        physical = frozenset(
+            str(name).lower()
+            for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+            )
+        )
+        conn.set_authorizer(functools.partial(_security_authorizer, physical_tables=physical))
     except BaseException:
         conn.close()
         raise
