@@ -1,58 +1,16 @@
-"""AST guardrails for Text-to-SQL.
+"""The parser check: only a single read-only SELECT on known tables may reach SQLite.
 
-Enforces an AST allowlist:
-- Only SELECT/UNION/INTERSECT/EXCEPT statements are permitted at the root.
-- Rejects root VALUES.
-- Walks the AST to reject any DML, DDL, Command, Pragma, Attach, Detach, Transaction, Into, etc.
-- Every function call must be on ALLOWED_FUNCTIONS, whether or not sqlglot knows it
-  (so load_extension, readfile, sqrt, etc. fail here instead of at SQLite).
-- Enforces table allowlist (known schema tables and CTE names in scope only; blocks sqlite_master).
-- Tolerates trailing semicolons and comments.
-- Returns Verdict(status=ALLOW|REJECT, reason=str).
+- Exactly one statement; trailing semicolons and comments are fine.
+- A SELECT, UNION, INTERSECT or EXCEPT at the root (a bare VALUES is rejected).
+- No DML, DDL, PRAGMA, ATTACH, transaction or INTO anywhere in the tree.
+- Every table is one of the four schema tables or a CTE name defined in the query.
 """
-
-import re
-from dataclasses import dataclass
-from enum import Enum
 
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
 from text_to_sql.schema import KNOWN_TABLES
-
-
-class Status(str, Enum):
-    ALLOW = "ALLOW"
-    REJECT = "REJECT"
-
-
-# The one function allowlist, by SQLite's own names. The AST check and the executor's SQLite
-# authorizer both check every function call against it. sqrt/pow/power/mod need a SQLite built
-# with math functions; without them the query fails at SQLite with "no such function".
-ALLOWED_FUNCTIONS = frozenset(
-    {
-        # aggregates
-        "count", "sum", "avg", "min", "max", "total", "group_concat", "string_agg",
-        # numbers
-        "round", "abs", "sign", "trunc", "floor", "ceil", "ceiling", "random", "sqrt", "pow",
-        "power", "mod",
-        # null handling and conditionals
-        "coalesce", "ifnull", "nullif", "iif", "likely", "unlikely",
-        # text
-        "lower", "upper", "length", "octet_length", "substr", "substring", "trim", "ltrim",
-        "rtrim", "replace", "instr", "printf", "format", "concat", "concat_ws", "char",
-        "unicode", "hex", "quote", "typeof", "like", "glob",
-        # dates
-        "date", "time", "datetime", "julianday", "strftime", "unixepoch", "timediff",
-        # window functions
-        "row_number", "rank", "dense_rank", "percent_rank", "cume_dist", "ntile", "lag",
-        "lead", "first_value", "last_value", "nth_value",
-        "sqlite_version",
-        # JSON (the -> and ->> operators reach SQLite's authorizer as functions named "->" and "->>")
-        "json_extract", "->", "->>",
-    }
-)  # fmt: skip
 
 FORBIDDEN_NODE_TYPES = (
     exp.DML,
@@ -72,172 +30,66 @@ FORBIDDEN_NODE_TYPES = (
     exp.Merge,
 )
 
-
-@dataclass(frozen=True)
-class Verdict:
-    status: Status
-    reason: str
-    code: str = ""
-
-    @property
-    def allowed(self) -> bool:
-        return self.status == Status.ALLOW
+ALLOWED = (True, "Query allowed: read-only SELECT query.")
 
 
-def _cte_in_scope(table: exp.Table, name: str) -> bool:
-    # A CTE name only counts where SQLite can see it: in the query that owns the WITH and below.
-    # A CTE in a subquery must not unlock the same name in the outer query.
-    ancestor = table.parent
-    while ancestor is not None:
-        with_ = ancestor.args.get("with_") or ancestor.args.get("with")
-        if isinstance(with_, exp.With) and any(
-            cte.alias_or_name.lower() == name for cte in with_.expressions
-        ):
-            return True
-        ancestor = ancestor.parent
-    return False
-
-
-# sqlglot models these as Func nodes, but SQLite has no function of that name: CAST, CASE,
-# EXISTS, AND/OR and COLLATE are syntax, and the TsOrDs wrappers are added around date arguments
-# by the parser.
-_NON_FUNCTION_NODES = (
-    exp.Cast,
-    exp.TryCast,
-    exp.Case,
-    exp.Exists,
-    exp.Connector,
-    exp.Collate,
-    exp.TsOrDsToTimestamp,
-    exp.TsOrDsToDate,
-    exp.TsOrDsToDatetime,
-    exp.TsOrDsToTime,
-)
-_FUNCTION_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\(")
-
-
-def _function_name(node: exp.Func) -> str:
-    """The name SQLite sees for a sqlglot function node (strftime is TimeToStr, char is Chr, ...)."""
-    if isinstance(node, exp.JSONExtractScalar):
-        rendered = node.sql(dialect="sqlite")
-        return "->>" if " ->> " in rendered else "json_extract"
-    if isinstance(node, exp.JSONExtract):
-        rendered = node.sql(dialect="sqlite")
-        return "->" if " -> " in rendered else "json_extract"
-    match = _FUNCTION_NAME.match(node.sql(dialect="sqlite"))
-    if match:
-        return match.group(1).lower()
-    # No call syntax (CURRENT_TIMESTAMP, REGEXP, ...): fall back to sqlglot's own name.
-    return type(node).sql_names()[0].lower()
-
-
-def validate_sql(sql: str) -> Verdict:
-    """
-    Validates a SQL query using AST inspection.
-    Returns Verdict(status=ALLOW|REJECT, reason=str, code=str).
-    """
+def check_sql(sql: str) -> tuple[bool, str]:
+    """Returns (allowed, reason). Nothing is executed."""
     cleaned = (sql or "").strip()
     if not cleaned:
-        return Verdict(
-            status=Status.REJECT,
-            reason="SQL query is empty or contains only whitespace.",
-            code="empty",
-        )
+        return False, "SQL query is empty or contains only whitespace."
 
     try:
-        parsed_statements = sqlglot.parse(cleaned, read="sqlite")
+        parsed = sqlglot.parse(cleaned, read="sqlite")
     except SqlglotError as e:
-        return Verdict(
-            status=Status.REJECT, reason=f"Failed to parse SQL: {e!s}", code="parse_error"
-        )
+        return False, f"Failed to parse SQL: {e!s}"
     except Exception as e:
-        return Verdict(status=Status.REJECT, reason=f"SQL parse error: {e!s}", code="parse_error")
+        return False, f"SQL parse error: {e!s}"
 
-    # Drop None and exp.Semicolon items (allows trailing semicolons, comments, and multiple semicolons)
-    statements = [
-        s for s in parsed_statements if s is not None and not isinstance(s, exp.Semicolon)
-    ]
-
+    # Trailing semicolons and comments parse as None or Semicolon items.
+    statements = [s for s in parsed if s is not None and not isinstance(s, exp.Semicolon)]
     if not statements:
-        return Verdict(
-            status=Status.REJECT,
-            reason="SQL query contains no executable statements.",
-            code="empty",
-        )
-
+        return False, "SQL query contains no executable statements."
     if len(statements) > 1:
-        return Verdict(
-            status=Status.REJECT,
-            reason=f"Multiple SQL statements detected ({len(statements)}). Stacked queries are prohibited.",
-            code="multiple_statements",
+        return (
+            False,
+            f"Multiple SQL statements detected ({len(statements)}). "
+            "Stacked queries are prohibited.",
         )
 
     root = statements[0]
-
-    # Root allowlist: Select, Union, Intersect, Except only. Reject root Values.
+    first_keyword = cleaned.split()[0].upper()
     if not isinstance(root, (exp.Select, exp.Union, exp.Intersect, exp.Except)):
-        first_kw = cleaned.split()[0].upper() if cleaned.split() else "STATEMENT"
-        return Verdict(
-            status=Status.REJECT,
-            reason=f"Disallowed SQL statement '{first_kw}'. Only SELECT queries are permitted; data modification and administrative operations are rejected.",
-            code="disallowed_root",
+        return (
+            False,
+            f"Disallowed SQL statement '{first_keyword}'. Only SELECT queries are permitted; "
+            "data modification and administrative operations are rejected.",
         )
 
-    # Walk entire AST for forbidden operations, functions, and table references
+    # A CTE name defined anywhere in the query may be read like a table.
+    cte_names = {cte.alias_or_name.lower() for cte in root.find_all(exp.CTE)}
+
     for node in root.walk():
-        # 1. Reject forbidden operations (DML, DDL, PRAGMA, ATTACH, VACUUM, INTO, etc.)
         if isinstance(node, FORBIDDEN_NODE_TYPES):
-            node_name = type(node).__name__
-            first_kw = cleaned.split()[0].upper() if cleaned.split() else node_name
-            return Verdict(
-                status=Status.REJECT,
-                reason=f"Disallowed SQL operation '{first_kw}' ({node_name}). Data modification, DDL, and administrative commands are prohibited.",
-                code="disallowed_node",
+            return (
+                False,
+                f"Disallowed SQL operation '{first_keyword}' ({type(node).__name__}). "
+                "Data modification, DDL, and administrative commands are prohibited.",
             )
 
-        # 2. Every function call must be on the allowlist, including ones sqlglot knows.
-        # (load_extension, readfile, randomblob, ... are unknown to sqlglot and land in Anonymous)
-        func_name = None
-        if isinstance(node, exp.Anonymous):
-            func_name = node.name.lower()
-        elif isinstance(node, exp.Match):
-            func_name = "match"  # the MATCH operator calls a function of that name
-        elif isinstance(node, exp.Func) and not isinstance(node, _NON_FUNCTION_NODES):
-            func_name = _function_name(node)
-        if func_name is not None:
-            if func_name not in ALLOWED_FUNCTIONS:
-                return Verdict(
-                    status=Status.REJECT,
-                    reason=f"Disallowed function call '{func_name}'. Only safe scalar functions are permitted.",
-                    code="disallowed_function",
-                )
-
-        # 3. Check tables
         if isinstance(node, exp.Table):
-            tbl_name = (getattr(node, "name", "") or "").lower()
-            if not tbl_name:
-                return Verdict(
-                    status=Status.REJECT,
-                    reason="Table-valued functions are prohibited.",
-                    code="table_function",
+            table = (node.name or "").lower()
+            if not table:
+                return False, "Table-valued functions are prohibited."
+
+            qualifier = (node.db or node.catalog or "").lower()
+            if qualifier and qualifier != "main":
+                return (
+                    False,
+                    f"Database-qualified table reference '{qualifier}.{table}' is prohibited.",
                 )
 
-            # Check database/catalog qualification (e.g. y.customers, temp.orders)
-            db_qualifier = (getattr(node, "db", "") or getattr(node, "catalog", "") or "").lower()
-            if db_qualifier and db_qualifier != "main":
-                return Verdict(
-                    status=Status.REJECT,
-                    reason=f"Database-qualified table reference '{db_qualifier}.{tbl_name}' is prohibited.",
-                    code="qualified_table",
-                )
+            if table not in KNOWN_TABLES and table not in cte_names:
+                return False, f"Table '{table}' is not in the database schema."
 
-            if tbl_name not in KNOWN_TABLES and not _cte_in_scope(node, tbl_name):
-                return Verdict(
-                    status=Status.REJECT,
-                    reason=f"Table '{tbl_name}' is not in the database schema.",
-                    code="unknown_table",
-                )
-
-    return Verdict(
-        status=Status.ALLOW, reason="Query allowed: read-only SELECT query.", code="allowed"
-    )
+    return ALLOWED

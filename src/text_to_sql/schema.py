@@ -70,7 +70,7 @@ def data_notes(db_path: str | Path = DEFAULT_DB_PATH) -> list[str]:
     return notes
 
 
-def get_schema_prompt_text(db_path: str | Path = DEFAULT_DB_PATH) -> str:
+def schema_text(db_path: str | Path = DEFAULT_DB_PATH) -> str:
     """Schema block for the system prompt: the stored CREATE TABLE text plus the data notes."""
     return "\n\n".join(
         [

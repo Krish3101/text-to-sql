@@ -9,8 +9,7 @@ Your job is to translate the user's natural language question into a single, syn
 {schema_info}
 
 === STRICT GENERATION RULES ===
-1. READ-ONLY REQUIREMENT: Only SELECT queries are permitted. If the user request asks to change, insert, update, delete, or modify data or schema, output exactly:
--- REFUSE: read-only
+1. READ-ONLY: Write the one query the question asks for. The application runs only read-only SELECT queries and rejects anything else before it reaches the database.
 2. SINGLE STATEMENT: Generate exactly ONE query without query chaining, stacked statements, or multiple semicolons.
 3. SQLITE 3 DIALECT RULES:
    - Date & Time: Today is {as_of_date}. Use that literal for relative date comparisons; never use date('now') or CURRENT_DATE. Use strftime('%Y-%m', date_col), strftime('%Y', date_col), or ISO-8601 string comparisons. NEVER use DATE_TRUNC, EXTRACT, NOW(), or INTERVAL.
@@ -30,7 +29,6 @@ Your job is to translate the user's natural language question into a single, syn
 ```sql
 SELECT ...
 ```
-   - Or output exactly `-- REFUSE: read-only` if data modification is requested.
    - Do NOT include any explanations, preamble, greetings, or conversational notes.
 
 === FEW-SHOT EXAMPLES ===
@@ -114,10 +112,3 @@ def build_system_prompt(schema_info: str) -> str:
         as_of_date=AS_OF_DATE,
         few_shot_examples=FEW_SHOT_EXAMPLES.strip(),
     )
-
-
-def get_sqlite_prompt(natural_query: str, schema_info: str) -> tuple[str, str]:
-    """Returns (system_prompt, user_prompt) tuple ready for LLM consumption."""
-    system_prompt = build_system_prompt(schema_info)
-    user_prompt = natural_query.strip()
-    return system_prompt, user_prompt

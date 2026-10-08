@@ -1,29 +1,25 @@
-"""Measures how often the model gets the right answer on the bundled database.
+"""Asks the model 20 questions and prints how many it gets right.
 
-Each question has a reference query I wrote by hand. The model's query counts as correct
-when it returns the same rows as the reference, in any order. Column names don't matter,
-but extra or missing columns do.
-
-Run from the project root, with OPENROUTER_API_KEY in .env:
+Each question has a reference query written by hand. An answer counts as correct when it returns
+the same rows as the reference, in any order. Column names don't matter, but extra or missing
+columns do. Run from the project root with OPENROUTER_API_KEY in .env:
 
     uv run python -m scripts.eval
 
-Each question can use up to 3 model calls (plus retries on rate limits), and OpenRouter's free
-tier allows 50 requests a day.
-Exit codes: 2 when there is no key, 3 when OpenRouter keeps answering 429 (daily quota used up).
+It uses up to 40 model calls, close to the free tier's 50 requests a day.
 """
 
 import os
 import sqlite3
 import sys
-import tempfile
 import time
+from contextlib import closing
 
 from dotenv import load_dotenv
 
+from text_to_sql.config import DEFAULT_DB_PATH, get_model
 from text_to_sql.database import init_db
-from text_to_sql.engine import TextToSQLEngine
-from text_to_sql.llm import RATE_LIMITED
+from text_to_sql.engine import answer
 
 QUESTIONS = [
     ("How many customers are there?", "SELECT COUNT(*) FROM customers"),
@@ -115,37 +111,24 @@ def normalise(rows):
 
 
 def main():
-    load_dotenv(".env")
+    load_dotenv()
     if not os.environ.get("OPENROUTER_API_KEY", "").strip():
-        print(
-            "Error: OPENROUTER_API_KEY is not set in environment or .env. Aborting eval.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+        sys.exit("Add OPENROUTER_API_KEY to .env first.")
 
-    db_path = os.path.join(tempfile.mkdtemp(), "eval.db")
-    init_db(db_path)
-    conn = sqlite3.connect(db_path)
-    engine = TextToSQLEngine(db_path=db_path)
-
+    init_db(DEFAULT_DB_PATH)
     correct = 0
-    for i, (question, reference) in enumerate(QUESTIONS, 1):
-        expected = normalise(conn.execute(reference).fetchall())
-        result = engine.execute_query(question)
-        if result.error == RATE_LIMITED:
-            print(f"\nStopped at question {i}: {RATE_LIMITED}", file=sys.stderr)
-            print(f"{correct}/{i - 1} correct before the stop.", file=sys.stderr)
-            sys.exit(3)
-        ok = result.error is None and normalise(result.rows) == expected
-        correct += ok
-        print(f"{'PASS' if ok else 'FAIL'}  {i:2}. {question}")
-        if not ok:
-            print(f"        got: {result.generated_sql!r}")
+    with closing(sqlite3.connect(DEFAULT_DB_PATH)) as conn:
+        for i, (question, reference) in enumerate(QUESTIONS, 1):
+            expected = normalise(conn.execute(reference).fetchall())
+            result = answer(question)
+            ok = result.error is None and normalise(result.rows) == expected
+            correct += ok
+            print(f"{'PASS' if ok else 'FAIL'}  {i:2}. {question}")
             if result.error:
-                print(f"        error: {result.error}")
-        time.sleep(3)  # stay under the free tier's per-minute limit
+                print(f"        {result.error}")  # a rate-limit message means the score is low
+            time.sleep(3)  # stay under the free tier's per-minute limit
 
-    print(f"\n{correct}/{len(QUESTIONS)} correct with {engine.model}")
+    print(f"\n{correct}/{len(QUESTIONS)} correct with {get_model()}")
 
 
 if __name__ == "__main__":
