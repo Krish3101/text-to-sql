@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "text-to-sql"
+version = "1.0.0"
+description = "Turns English questions into checked SQLite queries"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Krish Kalya", email = "krishkalya31012005@gmail.com" }
+]
+dependencies = [
+    "sqlglot>=30.0.0,<31.0.0",
+    "pandas>=2.2.0,<4.0.0",
+    "streamlit>=1.50.0,<2.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0,<10.0.0",
+    "ruff>=0.16.0,<1.0.0",
+    "pyyaml>=6.0.0,<7.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/text_to_sql"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
